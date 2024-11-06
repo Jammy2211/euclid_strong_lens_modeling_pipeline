@@ -10,6 +10,8 @@ to run the pipeline as a black-box on Euclid data.
 Getting Started
 ---------------
 
+**PyAutoLens** supports Python 3.9 to 3.11, with **Python 3.11 recommended**.
+
 You first may want to set up a **Python virtual environment** or **conda enviuroment** to install the pipeline
 in (see https://docs.python.org/3/library/venv.html).
 
@@ -60,7 +62,7 @@ The following additional pipelines are available in the repository:
 
 - ``group.py``: Lens modeling of group-scale lenses which have extra nearby galaxies whose light and mass must be modeled.
 - ``mge_only.py``: Perform a fast Multi-Gaussian Expansion (MGE) subtraction of the lens light, in order to better visualize the lensed source.
-- ``multi_waveband.py``: After modeling the high resolution VIS imaging, model lower resolution NIR / EXT imaging using a fixed lens model.
+- ``multi_wavelength.py``: After modeling the high resolution VIS imaging, model lower resolution NIR / EXT imaging using a fixed lens model.
 
 Documentation
 -------------

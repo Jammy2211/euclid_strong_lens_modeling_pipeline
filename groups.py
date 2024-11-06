@@ -292,6 +292,7 @@ def fit():
     The model components for the extra galaxies (e.g. `lens_bulge` and `lens_disk`) are passed from the SOURCE LP PIPELINE,
     via the `source_lp_result` object, therefore you do not need to manually pass them below.
     """
+
     analysis = al.AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_lp_result),
