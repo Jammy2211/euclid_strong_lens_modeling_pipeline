@@ -51,6 +51,12 @@ This script can be run as a black-box, with key output being generated, includin
 - Deblended images of the lens and source galaxies.
 - A pixelized source reconstruction.
 
+Here is an example of the output, which shows the lens and source galaxies debelended and a source reconstruction
+in the source-plane:
+
+.. image:: https://github.com/Jammy2211/PyAutoLogo/blob/main/gifs/pyautolens.gif?raw=true
+  :width: 900
+
 If key output for your science case is not generated, please contact James Nightingale on the Euclid consortium
 SLACK so it can be added to the pipeline and become a standard output of the Euclid strong lens modeling pipeline
 and therefore data release.
