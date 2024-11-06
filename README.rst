@@ -54,7 +54,7 @@ This script can be run as a black-box, with key output being generated, includin
 Here is an example of the output, which shows the lens and source galaxies debelended and a source reconstruction
 in the source-plane:
 
-.. image:: https://github.com/Jammy2211/PyAutoLogo/blob/main/gifs/pyautolens.gif?raw=true
+.. image:: https://github.com/Jammy2211/euclid_strong_lens_modeling_pipeline/blob/main/sie_fit.png?raw=true
   :width: 900
 
 If key output for your science case is not generated, please contact James Nightingale on the Euclid consortium
