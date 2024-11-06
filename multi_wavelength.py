@@ -56,7 +56,7 @@ Everything below is identical to `start_here.py` and thus not commented, as it i
 """
 
 
-def fit(dataset_name: str, dataset_waveband, mask_radius: float = 3.0, number_of_cores: int = 1):
+def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     import numpy as np
     import os
@@ -72,7 +72,7 @@ def fit(dataset_name: str, dataset_waveband, mask_radius: float = 3.0, number_of
     """
     __Dataset__ 
     """
-    dataset_path = path.join("dataset", dataset_name, dataset_waveband)
+    dataset_path = path.join("dataset", dataset_name, "vis")
 
     dataset = al.Imaging.from_fits(
         data_path=path.join(dataset_path, "data.fits"),
@@ -635,11 +635,16 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    fit(
+    mass_result = fit(
         dataset_name=args.dataset,
         mask_radius=float(args.mask_radius),
         number_of_cores=int(args.number_of_cores),
     )
 
-    fit_waveband(mass_result=mass_result)
+    fit_waveband(
+        mass_result=mass_result,
+        dataset_name=args.dataset,
+        mask_radius=float(args.mask_radius),
+        number_of_cores=int(args.number_of_cores),
+    )
 
