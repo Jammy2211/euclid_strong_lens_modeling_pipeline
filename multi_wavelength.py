@@ -56,12 +56,7 @@ Everything below is identical to `start_here.py` and thus not commented, as it i
 """
 
 
-def fit(dataset_waveband: str = "vis"):
-    # %matplotlib inline
-    # from pyprojroot import here
-    # workspace_path = str(here())
-    # %cd $workspace_path
-    # print(f"Working Directory has been set to `{workspace_path}`")
+def fit(dataset_name: str, dataset_waveband, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     import numpy as np
     import os
@@ -77,7 +72,6 @@ def fit(dataset_waveband: str = "vis"):
     """
     __Dataset__ 
     """
-    dataset_name = "example"
     dataset_path = path.join("dataset", dataset_name, dataset_waveband)
 
     dataset = al.Imaging.from_fits(
@@ -86,8 +80,6 @@ def fit(dataset_waveband: str = "vis"):
         psf_path=path.join(dataset_path, "psf.fits"),
         pixel_scales=0.1,
     )
-
-    mask_radius = 1.6
 
     mask = al.Mask2D.circular(
         shape_native=dataset.shape_native,
@@ -118,7 +110,7 @@ def fit(dataset_waveband: str = "vis"):
         path_prefix=path.join("euclid_pipeline"),
         unique_tag=dataset_name,
         info=None,
-        number_of_cores=4,
+        number_of_cores=number_of_cores,
         session=None,
     )
 
@@ -344,7 +336,7 @@ def fit(dataset_waveband: str = "vis"):
     return mass_result
 
 
-def fit_waveband(mass_result):
+def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, number_of_cores: int = 1):
     """
     The function below fits the same lens system as above, but using lower resolution data from a different
     waveband (e.g. NISP near-infrared imaging data or EXT ground based imaging data from DES).
@@ -377,7 +369,6 @@ def fit_waveband(mass_result):
     
     Usual API to set up dataset paths, but include its "main` path which is before the waveband folders.
     """
-    dataset_name = str(sys.argv[1])
     dataset_main_path = path.join("dataset", dataset_name)
 
     """
@@ -385,10 +376,15 @@ def fit_waveband(mass_result):
 
     The following list gives the names of the wavebands we are going to fit. 
 
-    The data for each waveband is loaded from a folder in the dataset folder with that name.
+    The data for each waveband is loaded from a folder in the dataset folder with that name, where the vis
+    datasets fitted above is removed from the list.
+    
+    The pixel scale of each waveband is assumed to be 0.1" as EXT data is sampler to the same resolution as VIS,
+    if this is not true this will need to be updated.
     """
-    dataset_waveband_list = ["r", "g"]
-    pixel_scale_list = [0.2, 0.2]
+    dataset_waveband_list = os.listdir(dataset_main_path)
+    dataset_waveband_list.remove("vis")
+    pixel_scale_list = [0.1] * len(dataset_waveband_list)
 
     """
     __Dataset Model__
@@ -431,8 +427,6 @@ def fit_waveband(mass_result):
             pixel_scales=pixel_scale,
         )
 
-        mask_radius = 1.6
-
         mask = al.Mask2D.circular(
             shape_native=dataset.shape_native,
             pixel_scales=dataset.pixel_scales,
@@ -462,6 +456,7 @@ def fit_waveband(mass_result):
             path_prefix=path.join("euclid_pipeline"),
             unique_tag=f"{dataset_name}_data_{dataset_waveband}",
             info=None,
+            number_of_cores=number_of_cores,
         )
 
         """
@@ -617,6 +612,34 @@ def fit_waveband(mass_result):
 
 
 if __name__ == "__main__":
-    mass_result = fit()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Lens Model Inputs")
+    parser.add_argument(
+        "--dataset", metavar="path", required=True, help="the path to the dataset"
+    )
+
+    parser.add_argument(
+        "--mask_radius",
+        metavar="float",
+        required=False,
+        help="The Circular Radius of the Mask",
+    )
+
+    parser.add_argument(
+        "--number_of_cores",
+        metavar="int",
+        required=False,
+        help="The number of cores to parallelize the fit",
+    )
+
+    args = parser.parse_args()
+
+    fit(
+        dataset_name=args.dataset,
+        mask_radius=float(args.mask_radius),
+        number_of_cores=int(args.number_of_cores),
+    )
 
     fit_waveband(mass_result=mass_result)
+

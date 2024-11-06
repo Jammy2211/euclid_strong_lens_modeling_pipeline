@@ -131,12 +131,7 @@ If any code in this script is unclear, refer to the `chaining/start_here.ipynb` 
 """
 
 
-def fit():
-    # %matplotlib inline
-    # from pyprojroot import here
-    # workspace_path = str(here())
-    # %cd $workspace_path
-    # print(f"Working Directory has been set to `{workspace_path}`")
+def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     import numpy as np
     import os
@@ -154,7 +149,7 @@ def fit():
     
     Load, plot and mask the `Imaging` data.
     """
-    dataset_name = str(sys.argv[1])
+    dataset_name = dataset_name
     dataset_waveband = "vis"
     dataset_path = path.join("dataset", dataset_name, dataset_waveband)
 
@@ -164,8 +159,6 @@ def fit():
         psf_path=path.join(dataset_path, "psf.fits"),
         pixel_scales=0.1,
     )
-
-    mask_radius = 1.6
 
     mask = al.Mask2D.circular(
         shape_native=dataset.shape_native,
@@ -198,7 +191,7 @@ def fit():
         path_prefix=path.join("euclid_pipeline"),
         unique_tag=dataset_name,
         info=None,
-        number_of_cores=4,
+        number_of_cores=number_of_cores,
         session=None,
     )
 
@@ -206,6 +199,9 @@ def fit():
     __Redshifts__
     
     The redshifts of the lens and source galaxies.
+    
+    These are placeholders for now given we probably don't know the redshifts of the lens and source galaxies,
+    but amnually input via command line can be added.
     """
     redshift_lens = 0.5
     redshift_source = 1.0
@@ -533,4 +529,31 @@ def fit():
 
 
 if __name__ == "__main__":
-    fit()
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Lens Model Inputs")
+    parser.add_argument(
+        "--dataset", metavar="path", required=True, help="the path to the dataset"
+    )
+
+    parser.add_argument(
+        "--mask_radius",
+        metavar="float",
+        required=False,
+        help="The Circular Radius of the Mask",
+    )
+
+    parser.add_argument(
+        "--number_of_cores",
+        metavar="int",
+        required=False,
+        help="The number of cores to parallelize the fit",
+    )
+
+    args = parser.parse_args()
+
+    fit(
+        dataset_name=args.dataset,
+        mask_radius=float(args.mask_radius),
+        number_of_cores=int(args.number_of_cores),
+    )

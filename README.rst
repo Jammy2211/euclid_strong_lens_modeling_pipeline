@@ -28,13 +28,13 @@ Clone the pipeline repository:
 .. code-block:: bash
 
     git clone https://github.com/Jammy2211/euclid_strong_lens_modeling_pipeline
+    cd euclid_strong_lens_modeling_pipeline
 
 Run the pipeline with the example dataset:
 
 .. code-block:: bash
 
-    cd euclid_strong_lens_modeling_pipeline
-    python3 start_here.py example
+    python start_here.py --dataset=example --mask_radius=2.0 --number_of_cores=4
 
 The pipeline will run on the example dataset, outputting results to the `output` folder and in the `dataset` folder,
 and it can be easily modified to run on your own data.
@@ -63,6 +63,10 @@ The following additional pipelines are available in the repository:
 - ``group.py``: Lens modeling of group-scale lenses which have extra nearby galaxies whose light and mass must be modeled.
 - ``mge_only.py``: Perform a fast Multi-Gaussian Expansion (MGE) subtraction of the lens light, in order to better visualize the lensed source.
 - ``multi_wavelength.py``: After modeling the high resolution VIS imaging, model lower resolution NIR / EXT imaging using a fixed lens model.
+
+All pipelines are run with the same API as the `start_here.py` script, for example:
+
+.. code-block:: bash
 
 Documentation
 -------------
