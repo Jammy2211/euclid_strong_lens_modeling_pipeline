@@ -68,6 +68,8 @@ All pipelines are run with the same API as the `start_here.py` script, for examp
 
 .. code-block:: bash
 
+    python groups.py --dataset=group --mask_radius=2.0 --number_of_cores=4
+
 Documentation
 -------------
 
