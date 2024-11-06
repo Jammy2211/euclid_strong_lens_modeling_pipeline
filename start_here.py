@@ -3,7 +3,7 @@ Euclid Pipeline: Start Here
 ===========================
 
 This scripts allows you to run the Euclid lens modeling pipeline locally on your computer. It comes with an example
-simulated Euclid strong lens dataset, which is fitted using the pipeline, and over 4 CPus should take ~1 hour to run.
+simulated Euclid strong lens dataset, which is fitted using the pipeline, and over 4 CPus should take ~3-5 hours to run.
 
 The script itself is running **PyAutoLens**, which will require installation first via the instructions on the
 GitHub page:
@@ -20,7 +20,9 @@ lens model quantities like the Einstein Radius.
 Please contact James Nightingale on the Euclid Consortium Slack with any questions or if you would like other
 information on the pipeline.
 
-The text below is taken from the **PyAutoLens** documentation and describes the pipeline in more detail.
+The text below is taken from the **PyAutoLens** documentation and describes the pipeline in more detail. You do
+not need to understand things like the prequisites, pipeline structure, design choices, etc in order to run
+the pipeline as a black box, the text is simply there for your information.
 
 __SLaM (Source, Light and Mass)__
 
