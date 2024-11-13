@@ -133,8 +133,12 @@ If any code in this script is unclear, refer to the `chaining/start_here.ipynb` 
 """
 
 
-def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
-
+def fit(
+    dataset_name: str,
+    mask_radius: float = 3.0,
+    number_of_cores: int = 1,
+    iterations_per_update: int = 5000,
+):
     import numpy as np
     import os
     import sys
@@ -207,6 +211,23 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     """
     redshift_lens = 0.5
     redshift_source = 1.0
+
+    """
+    __HPC Mode__
+    
+    When running in parallel via Python `multiprocessing`, display issues with the `matplotlib` backend can arise
+    and cause the code to crash.
+    
+    HPC mode sets the backend to mitigate this issue and is set to run throughout the entire pipeline below.
+    
+    The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
+    output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
+    are output to hard-disk.
+    """
+    from autoconf import conf
+
+    conf.instance["general"]["hpc"]["hpc_mode"] = True
+    conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
 
     """
     __SOURCE LP PIPELINE__
@@ -552,10 +573,18 @@ if __name__ == "__main__":
         help="The number of cores to parallelize the fit",
     )
 
+    parser.add_argument(
+        "--iterations_per_update",
+        metavar="int",
+        required=False,
+        help="The number of iterations between each update",
+    )
+
     args = parser.parse_args()
 
     fit(
         dataset_name=args.dataset,
         mask_radius=float(args.mask_radius),
         number_of_cores=int(args.number_of_cores),
+        iterations_per_update=int(args.iterations_per_update),
     )

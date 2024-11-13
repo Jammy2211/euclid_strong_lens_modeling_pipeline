@@ -10,7 +10,15 @@ This should enable simple lens modeling of lensed quasars, supernovae or other p
 
 __Point Dataset__
 
+Point source modeling uses a `PointDataset` object, which is a collection of positions and fluxes of the point
+source (although the fluxes are by default not used in the modeling).
 
+Here is the example the `point_dataset.json` file passed to this script on the GitHub page:
+
+https://github.com/Jammy2211/euclid_strong_lens_modeling_pipeline/blob/main/dataset/point_example/point_dataset.json
+
+If you want to perform point source modeling on your own dataset, you need to format it as a `.json` file using
+the same format as the example above.
 
 __Model__
 
@@ -23,12 +31,40 @@ The `ExternalShear` is also not included in the mass model, where it is for the 
 imaged point source (8 data points) there is insufficient information to fully constain a model with
 an `Isothermal` and `ExternalShear` (9 parameters).
 """
-def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
+
+def fit(
+    dataset_name: str,
+    use_fluxes: bool = False,
+    number_of_cores: int = 1,
+    iterations_per_update: int = 5000,
+):
+    import os
+    import sys
     from os import path
     import autofit as af
     import autolens as al
     import autolens.plot as aplt
+
+    sys.path.insert(0, os.getcwd())
+    import slam
+
+    """
+    __HPC Mode__
+
+    When running in parallel via Python `multiprocessing`, display issues with the `matplotlib` backend can arise
+    and cause the code to crash.
+
+    HPC mode sets the backend to mitigate this issue and is set to run throughout the entire pipeline below.
+
+    The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
+    output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
+    are output to hard-disk.
+    """
+    from autoconf import conf
+
+    conf.instance["general"]["hpc"]["hpc_mode"] = True
+    conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
 
     """
     __Dataset__
@@ -36,8 +72,7 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     Load the strong lens point-source dataset `simple`, which is the dataset we will use to perform point source 
     lens modeling.
     """
-    dataset_name = "simple"
-    dataset_path = path.join("dataset", "point_source", dataset_name)
+    dataset_path = path.join("dataset", dataset_name)
 
     """
     We now load the point source dataset we will fit using point source modeling. 
@@ -47,18 +82,6 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     dataset = al.from_json(
         file_path=path.join(dataset_path, "point_dataset.json"),
     )
-
-    """
-    We can print this dictionary to see the dataset's `name`, `positions` and `fluxes` and noise-map values.
-    """
-    print("Point Dataset Info:")
-    print(dataset.info)
-
-    """
-    We can also plot the positions and fluxes of the `PointDataset`.
-    """
-    dataset_plotter = aplt.PointDatasetPlotter(dataset=dataset)
-    dataset_plotter.subplot_dataset()
 
     """
     We next load an image of the dataset. 
@@ -76,15 +99,6 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     data = al.Array2D.from_fits(
         file_path=path.join(dataset_path, "data.fits"), pixel_scales=0.05
     )
-
-    """
-    We can also plot the dataset's multiple image positions over the observed image, to ensure they overlap the
-    lensed source's multiple images.
-    """
-    visuals = aplt.Visuals2D(positions=dataset.positions)
-
-    array_plotter = aplt.Array2DPlotter(array=data, visuals_2d=visuals)
-    array_plotter.figure_2d()
 
     """
     __Point Solver__
@@ -112,7 +126,7 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     """
     grid = al.Grid2D.uniform(
         shape_native=(100, 100),
-        pixel_scales=0.2,  # <- The pixel-scale describes the conversion from pixel units to arc-seconds.
+        pixel_scales=0.1,  # <- The pixel-scale describes the conversion from pixel units to arc-seconds.
     )
 
     solver = al.PointSolver.for_grid(
@@ -156,30 +170,20 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     mass = af.Model(al.mp.Isothermal)
 
-    lens = af.Model(al.Galaxy, redshift=0.5, mass=al.mp.Isothermal)
+    lens = af.Model(al.Galaxy, redshift=0.5, mass=mass)
 
     # Source:
 
-    point_0 = af.Model(al.ps.Point)
+    if not use_fluxes:
+        point_0 = af.Model(al.ps.Point)
+    else:
+        point_0 = af.Model(al.ps.PointFlux)
 
     source = af.Model(al.Galaxy, redshift=1.0, point_0=point_0)
 
     # Overall Lens Model:
 
     model = af.Collection(galaxies=af.Collection(lens=lens, source=source))
-
-    """
-    The `info` attribute shows the model in a readable format.
-    
-    [The `info` below may not display optimally on your computer screen, for example the whitespace between parameter
-    names on the left and parameter priors on the right may lead them to appear across multiple lines. This is a
-    common issue in Jupyter notebooks.
-    
-    The`info_whitespace_length` parameter in the file `config/general.yaml` in the [output] section can be changed to 
-    increase or decrease the amount of whitespace (The Jupyter notebook kernel will need to be reset for this change to 
-    appear in a notebook).]
-    """
-    print(model.info)
 
     """
     __Search__
@@ -237,11 +241,10 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     reduced back to 1 to fix it.
     """
     search = af.Nautilus(
-        path_prefix=path.join("point_source", "modeling"),
-        name="start_here",
+        path_prefix=path.join("euclid_point_source_pipeline"),
         unique_tag=dataset_name,
         n_live=100,
-        number_of_cores=4,
+        number_of_cores=number_of_cores,
     )
 
     """
@@ -281,7 +284,7 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     analysis = al.AnalysisPoint(
         dataset=dataset,
         solver=solver,
-        fit_positions_cls=al.FitPositionsImagePair,  # Image-plane chi-squared with no repeat image pairs.
+        fit_positions_cls=al.FitPositionsImagePairRepeat,  # Image-plane chi-squared with repeat image pairs.
     )
 
     """
@@ -292,74 +295,16 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     """
     result = search.fit(model=model, analysis=analysis)
 
-    """
-    __Output Folder__
-    
-    Now this is running you should checkout the `autolens_workspace/output` folder. This is where the results of the 
-    search are written to hard-disk (in the `start_here` folder), where all outputs are human readable (e.g. as .json,
-    .csv or text files).
-    
-    As the fit progresses, results are written to the `output` folder on the fly using the highest likelihood model found
-    by the non-linear search so far. This means you can inspect the results of the model-fit as it runs, without having to
-    wait for the non-linear search to terminate.
-     
-    The `output` folder includes:
-    
-     - `model.info`: Summarizes the lens model, its parameters and their priors discussed in the next tutorial.
-     
-     - `model.results`: Summarizes the highest likelihood lens model inferred so far including errors.
-     
-     - `images`: Visualization of the highest likelihood model-fit to the dataset, (e.g. a fit subplot showing the lens 
-     and source galaxies, model data and residuals).
-     
-     - `files`: A folder containing .fits files of the dataset, the model as a human-readable .json file, 
-     a `.csv` table of every non-linear search sample and other files containing information about the model-fit.
-     
-     - search.summary: A file providing summary statistics on the performance of the non-linear search.
-     
-     - `search_internal`: Internal files of the non-linear search (in this case Nautilus) used for resuming the fit and
-      visualizing the search.
-    
-    __Result__
-    
-    The search returns a result object, which whose `info` attribute shows the result in a readable format.
-    
-    [Above, we discussed that the `info_whitespace_length` parameter in the config files could b changed to make 
-    the `model.info` attribute display optimally on your computer. This attribute also controls the whitespace of the
-    `result.info` attribute.]
-    """
-    print(result.info)
-
-    """
-    We plot the maximum likelihood fit, tracer images and posteriors inferred via Nautilus.
-    
-    Checkout `autolens_workspace/*/imaging/results` for a full description of analysing results in **PyAutoLens**.
-    """
-    print(result.max_log_likelihood_instance)
-
-    tracer_plotter = aplt.TracerPlotter(
-        tracer=result.max_log_likelihood_tracer, grid=result.grid
+    slam.slam_util.output_model_results(
+        output_path=path.join(dataset_path, "model"),
+        result=result,
+        filename="model.results",
     )
-    tracer_plotter.subplot_tracer()
-
-    """
-    The result contains the full posterior information of our non-linear search, including all parameter samples, 
-    log likelihood values and tools to compute the errors on the lens model. 
-    
-    There are built in visualization tools for plotting this.
-    
-    The plot is labeled with short hand parameter names (e.g. `sersic_index` is mapped to the short hand 
-    parameter `n`). These mappings ate specified in the `config/notation.yaml` file and can be customized by users.
-    
-    The superscripts of labels correspond to the name each component was given in the model (e.g. for the `Isothermal`
-    mass its name `mass` defined when making the `Model` above is used).
-    """
-    plotter = aplt.NestPlotter(samples=result.samples)
-    plotter.corner_anesthetic()
 
     """
     Checkout `autolens_workspace/*/imaging/results` for a full description of analysing results in **PyAutoLens**.
     """
+
 
 if __name__ == "__main__":
     import argparse
@@ -368,12 +313,8 @@ if __name__ == "__main__":
     parser.add_argument(
         "--dataset", metavar="path", required=True, help="the path to the dataset"
     )
-
     parser.add_argument(
-        "--mask_radius",
-        metavar="float",
-        required=False,
-        help="The Circular Radius of the Mask",
+        "--use_fluxes", metavar="bool", required=False, help="Use fluxes in the fit"
     )
 
     parser.add_argument(
@@ -383,10 +324,18 @@ if __name__ == "__main__":
         help="The number of cores to parallelize the fit",
     )
 
+    parser.add_argument(
+        "--iterations_per_update",
+        metavar="int",
+        required=False,
+        help="The number of iterations between each update",
+    )
+
     args = parser.parse_args()
 
     fit(
         dataset_name=args.dataset,
-        mask_radius=float(args.mask_radius),
-        number_of_cores=int(args.number_of_cores),
+        use_fluxes=args.use_fluxes,
+        number_of_cores=args.number_of_cores,
+        iterations_per_update=int(args.iterations_per_update),
     )

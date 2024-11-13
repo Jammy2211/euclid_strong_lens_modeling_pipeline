@@ -28,8 +28,9 @@ __Dataset__
 
 The path where the extra galaxy centres are output, which is `datasetgroup`.
 """
-dataset_name = "group"
-dataset_path = path.join("dataset", dataset_name)
+dataset_name = "EUCLJ174907.29+645946.3"
+dataset_main_path = path.join("dataset", dataset_name)
+dataset_path = path.join(dataset_main_path, "vis")
 
 """
 The pixel scale of the imaging dataset.
@@ -103,7 +104,7 @@ array_2d_plotter = aplt.Array2DPlotter(
     visuals_2d=visuals,
     mat_plot_2d=aplt.MatPlot2D(
         output=aplt.Output(
-            path=dataset_path, filename="extra_galaxies_centres", format="png"
+            path=dataset_main_path, filename="extra_galaxies_centres", format="png"
         )
     ),
 )
@@ -115,5 +116,5 @@ when we model them.
 """
 al.output_to_json(
     obj=extra_galaxies_centres,
-    file_path=path.join(dataset_path, "extra_galaxies_centres.json"),
+    file_path=path.join(dataset_main_path, "extra_galaxies_centres.json"),
 )

@@ -77,7 +77,7 @@ def run(
             source=source,
         ),
         extra_galaxies=al.util.chaining.extra_galaxies_from(
-            result=source_result_for_lens, light_as_model=True
+            result=source_result_for_lens, light_as_model=False
         ),
         dataset_model=dataset_model,
     )

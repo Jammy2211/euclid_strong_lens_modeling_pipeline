@@ -56,8 +56,12 @@ Everything below is identical to `start_here.py` and thus not commented, as it i
 """
 
 
-def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
-
+def fit(
+    dataset_name: str,
+    mask_radius: float = 3.0,
+    number_of_cores: int = 1,
+    iterations_per_update: int = 5000,
+):
     import numpy as np
     import os
     import sys
@@ -107,8 +111,8 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     __Settings AutoFit__
     """
     settings_search = af.SettingsSearch(
-        path_prefix=path.join("euclid_pipeline"),
-        unique_tag=dataset_name,
+        path_prefix=path.join("euclid_pipeline", dataset_name),
+        unique_tag="vis",
         info=None,
         number_of_cores=number_of_cores,
         session=None,
@@ -119,6 +123,23 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     """
     redshift_lens = 0.5
     redshift_source = 1.0
+
+    """
+    __HPC Mode__
+
+    When running in parallel via Python `multiprocessing`, display issues with the `matplotlib` backend can arise
+    and cause the code to crash.
+
+    HPC mode sets the backend to mitigate this issue and is set to run throughout the entire pipeline below.
+
+    The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
+    output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
+    are output to hard-disk.
+    """
+    from autoconf import conf
+
+    conf.instance["general"]["hpc"]["hpc_mode"] = True
+    conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
 
     """
     __SOURCE LP PIPELINE__
@@ -336,7 +357,13 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     return mass_result
 
 
-def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, number_of_cores: int = 1):
+def fit_waveband(
+    dataset_name: str,
+    mass_result,
+    mask_radius: float = 3.0,
+    number_of_cores: int = 1,
+    iterations_per_update: int = 5000,
+):
     """
     The function below fits the same lens system as above, but using lower resolution data from a different
     waveband (e.g. NISP near-infrared imaging data or EXT ground based imaging data from DES).
@@ -365,11 +392,29 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
     import slam
 
     """
+    __HPC Mode__
+
+    When running in parallel via Python `multiprocessing`, display issues with the `matplotlib` backend can arise
+    and cause the code to crash.
+
+    HPC mode sets the backend to mitigate this issue and is set to run throughout the entire pipeline below.
+
+    The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
+    output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
+    are output to hard-disk.
+    """
+    from autoconf import conf
+
+    conf.instance["general"]["hpc"]["hpc_mode"] = True
+    conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
+
+
+    """
     __Dataset__
-    
+
     Usual API to set up dataset paths, but include its "main` path which is before the waveband folders.
     """
-    dataset_main_path = path.join("dataset", dataset_name)
+    dataset_main_path = path.join(cosma_dataset_path, dataset_name)
 
     """
     __Dataset Wavebands__
@@ -378,7 +423,7 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
 
     The data for each waveband is loaded from a folder in the dataset folder with that name, where the vis
     datasets fitted above is removed from the list.
-    
+
     The pixel scale of each waveband is assumed to be 0.1" as EXT data is sampler to the same resolution as VIS,
     if this is not true this will need to be updated.
     """
@@ -388,12 +433,12 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
 
     """
     __Dataset Model__
-    
+
     For each fit, the (y,x) offset of the secondary data from the primary data is a free parameter. 
-    
+
     This is achieved by setting up a `DatasetModel` for each waveband, which extends the model with components
     including the grid offset.
-    
+
     This ensures that if the datasets are offset with respect to one another, the model can correct for this,
     with sub-pixel offsets often being important in lens modeling as the precision of a lens model can often be
     less than the requirements on astrometry.
@@ -409,9 +454,9 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
 
     """
     __Result Dict__
-    
+
     Visualization at the end of the pipeline will output all fits to all wavebands on a single matplotlib subplot.
-    
+
     The results of each fit are stored in a dictionary, which is used to pass the results of each fit to the
     visualization functions.
     """
@@ -453,8 +498,8 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
         __Settings AutoFit__
         """
         settings_search = af.SettingsSearch(
-            path_prefix=path.join("euclid_pipeline"),
-            unique_tag=f"{dataset_name}_data_{dataset_waveband}",
+            path_prefix=path.join("euclid_pipeline", dataset_name),
+            unique_tag=dataset_waveband,
             info=None,
             number_of_cores=number_of_cores,
         )
@@ -538,6 +583,9 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
             raise_inversion_positions_likelihood_exception=False,
         )
 
+        dataset_model.grid_offset.grid_offset_0 = source_lp_result.instance.dataset_model.grid_offset[0]
+        dataset_model.grid_offset.grid_offset_1 = source_lp_result.instance.dataset_model.grid_offset[1]
+
         source_pix_result_1 = slam.source_pix.run_1(
             settings_search=settings_search,
             analysis=analysis,
@@ -545,6 +593,7 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
             mesh_init=al.mesh.Delaunay,
             image_mesh_init_shape=(20, 20),
             dataset_model=dataset_model,
+            fixed_mass_model=True,
         )
 
         source_pix_result_1.max_log_likelihood_fit.inversion.cls_list_from(
@@ -561,6 +610,9 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
                 image_mesh_adapt_background_percent_check=0.8,
             ),
         )
+
+        dataset_model.grid_offset.grid_offset_0 = source_lp_result.instance.dataset_model.grid_offset[0]
+        dataset_model.grid_offset.grid_offset_1 = source_lp_result.instance.dataset_model.grid_offset[1]
 
         multi_result = slam.source_pix.run_2(
             settings_search=settings_search,
@@ -598,7 +650,7 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
             multi_result_dict[dataset_waveband] for dataset_waveband in tag_list
         ],
         tag_list=tag_list,
-        filename="8_sie_fit",
+        filename="sie_fit",
     )
 
     slam.slam_util.output_source_multi_png(
@@ -607,7 +659,7 @@ def fit_waveband(dataset_name: str, mass_result, mask_radius: float = 3.0, numbe
             multi_result_dict[dataset_waveband] for dataset_waveband in tag_list
         ],
         tag_list=tag_list,
-        filename="9_source_reconstruction",
+        filename="source_reconstruction",
     )
 
 
@@ -633,12 +685,20 @@ if __name__ == "__main__":
         help="The number of cores to parallelize the fit",
     )
 
+    parser.add_argument(
+        "--iterations_per_update",
+        metavar="int",
+        required=False,
+        help="The number of iterations between each update",
+    )
+
     args = parser.parse_args()
 
     mass_result = fit(
         dataset_name=args.dataset,
         mask_radius=float(args.mask_radius),
         number_of_cores=int(args.number_of_cores),
+        iterations_per_update=int(args.iterations_per_update),
     )
 
     fit_waveband(
@@ -646,5 +706,5 @@ if __name__ == "__main__":
         dataset_name=args.dataset,
         mask_radius=float(args.mask_radius),
         number_of_cores=int(args.number_of_cores),
+        iterations_per_update=int(args.iterations_per_update),
     )
-

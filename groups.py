@@ -61,8 +61,12 @@ If any code in this script is unclear, refer to the `chaining/start_here.ipynb` 
 """
 
 
-def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
-
+def fit(
+    dataset_name: str,
+    mask_radius: float = 3.0,
+    number_of_cores: int = 1,
+    iterations_per_update: int = 5000,
+):
     import numpy as np
     import os
     import sys
@@ -80,7 +84,8 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     Load, plot and mask the `Imaging` data.
     """
     dataset_waveband = "vis"
-    dataset_path = path.join("dataset", dataset_name, dataset_waveband)
+    dataset_main_path = path.join("dataset", dataset_name)
+    dataset_path = path.join(dataset_main_path, dataset_waveband)
 
     dataset = al.Imaging.from_fits(
         data_path=path.join(dataset_path, "data.fits"),
@@ -116,7 +121,7 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
     """
     extra_galaxies_centres = al.Grid2DIrregular(
         al.from_json(
-            file_path=path.join("dataset", dataset_name, "extra_galaxies_centres.json")
+            file_path=path.join(dataset_main_path, "extra_galaxies_centres.json")
         )
     )
 
@@ -124,12 +129,12 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     """
     __Settings AutoFit__
-    
+
     The settings of autofit, which controls the output paths, parallelization, database use, etc.
     """
     settings_search = af.SettingsSearch(
-        path_prefix=path.join("euclid_pipeline"),
-        unique_tag=dataset_name,
+        path_prefix=path.join("euclid_group_pipeline"),
+        unique_tag=dataset_waveband,
         info=None,
         number_of_cores=number_of_cores,
         session=None,
@@ -137,15 +142,32 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     """
     __Redshifts__
-    
+
     The redshifts of the lens and source galaxies.
     """
     redshift_lens = 0.5
     redshift_source = 1.0
 
     """
+    __HPC Mode__
+
+    When running in parallel via Python `multiprocessing`, display issues with the `matplotlib` backend can arise
+    and cause the code to crash.
+
+    HPC mode sets the backend to mitigate this issue and is set to run throughout the entire pipeline below.
+
+    The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
+    output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
+    are output to hard-disk.
+    """
+    from autoconf import conf
+
+    conf.instance["general"]["hpc"]["hpc_mode"] = True
+    conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
+
+    """
     __SOURCE LP PIPELINE__
-    
+
     The SOURCE LP PIPELINE is identical to the `start_here.ipynb` example, except the `extra_galaxies` are included in the
     model.
     """
@@ -278,9 +300,9 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     """
     __SOURCE PIX PIPELINE__
-    
+
     The SOURCE PIX PIPELINE (and every pipeline that follows) are identical to the `start_here.ipynb` example.
-    
+
     The model components for the extra galaxies (e.g. `lens_bulge` and `lens_disk`) are passed from the SOURCE LP PIPELINE,
     via the `source_lp_result` object, therefore you do not need to manually pass them below.
     """
@@ -303,9 +325,9 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     """
     __SOURCE PIX PIPELINE 2 (with lens light)__
-    
+
     As above, this pipeline also has the same API as the `start_here.ipynb` example.
-    
+
     The extra galaxies are passed from the SOURCE PIX PIPELINE, via the `source_pix_result_1` object, therefore you do not
     need to manually pass them below.
     """
@@ -331,11 +353,13 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
         image_mesh_pixels_fixed=500,
     )
 
+    aaa
+
     """
     __LIGHT LP PIPELINE__
-    
+
     As above, this pipeline also has the same API as the `start_here.ipynb` example.
-    
+
     The extra galaxies are passed from the SOURCE PIX PIPELINE, via the `source_pix_result_1` object, therefore you do not
     need to manually pass them below.
     """
@@ -380,9 +404,9 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     """
     __MASS TOTAL PIPELINE__
-    
+
     As above, this pipeline also has the same API as the `start_here.ipynb` example.
-    
+
     The extra galaxies are passed from the SOURCE PIX PIPELINE, via the `source_pix_result_1` object, therefore you do not
     need to manually pass them below.
     """
@@ -405,7 +429,7 @@ def fit(dataset_name: str, mask_radius: float = 3.0, number_of_cores: int = 1):
 
     """
     __Output__
-    
+
     The `start_hre.ipynb` example describes how results can be output to hard-disk after the SLaM pipelines have been run.
     Checkout that script for a complete description of the output of this script.
     """
@@ -458,11 +482,18 @@ if __name__ == "__main__":
         help="The number of cores to parallelize the fit",
     )
 
+    parser.add_argument(
+        "--iterations_per_update",
+        metavar="int",
+        required=False,
+        help="The number of iterations between each update",
+    )
+
     args = parser.parse_args()
 
     fit(
         dataset_name=args.dataset,
         mask_radius=float(args.mask_radius),
         number_of_cores=int(args.number_of_cores),
+        iterations_per_update=int(args.iterations_per_update),
     )
-

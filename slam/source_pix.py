@@ -15,6 +15,7 @@ def run_1(
         al.reg.AdaptiveBrightnessSplit
     ),
     dataset_model: Optional[af.Model] = None,
+    fixed_mass_model: bool = False,
 ) -> af.Result:
     """
     The first SLaM SOURCE PIX PIPELINE, which initializes a lens model which uses a pixelized source for the source
@@ -68,11 +69,19 @@ def run_1(
     images that are used in search 2.
     """
 
-    mass = al.util.chaining.mass_from(
-        mass=source_lp_result.model.galaxies.lens.mass,
-        mass_result=source_lp_result.model.galaxies.lens.mass,
-        unfix_mass_centre=True,
-    )
+    if not fixed_mass_model:
+
+        mass = al.util.chaining.mass_from(
+            mass=source_lp_result.model.galaxies.lens.mass,
+            mass_result=source_lp_result.model.galaxies.lens.mass,
+            unfix_mass_centre=True,
+        )
+        shear = source_lp_result.model.galaxies.lens.shear
+
+    else:
+
+        mass = source_lp_result.instance.galaxies.lens.mass
+        shear = source_lp_result.instance.galaxies.lens.shear
 
     image_mesh_init.shape = image_mesh_init_shape
 
@@ -85,7 +94,7 @@ def run_1(
                 disk=source_lp_result.instance.galaxies.lens.disk,
                 point=source_lp_result.instance.galaxies.lens.point,
                 mass=mass,
-                shear=source_lp_result.model.galaxies.lens.shear,
+                shear=shear
             ),
             source=af.Model(
                 al.Galaxy,
