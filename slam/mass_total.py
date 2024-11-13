@@ -1,6 +1,7 @@
 import autofit as af
 import autolens as al
 
+from . import slam_util
 
 from typing import Union, Optional, Tuple
 
@@ -18,6 +19,7 @@ def run(
     smbh: Optional[af.Model] = None,
     mass_centre: Optional[Tuple[float, float]] = None,
     reset_shear_prior: bool = False,
+    extra_galaxies: Optional[af.Collection] = None,
     dataset_model: Optional[af.Model] = None,
 ) -> af.Result:
     """
@@ -55,6 +57,8 @@ def run(
         If `True`, the shear of the mass model is reset to the config priors (e.g. broad uniform). This is useful
         when the mass model changes in a way that adds azimuthal structure (e.g. `PowerLawMultipole`) that the
         shear in ass models in earlier pipelines may have absorbed some of the signal of.
+    extra_galaxies
+        Additional extra galaxies containing light and mass profiles, which model nearby line of sight galaxies.
     dataset_model
         Add aspects of the dataset to the model, for example the arc-second (y,x) offset between two datasets for
         multi-band fitting or the background sky level.
@@ -138,10 +142,20 @@ def run(
             ),
             source=source,
         ),
-        extra_galaxies=al.util.chaining.extra_galaxies_from(
-            result=source_result_for_lens, mass_as_model=True
-        ),
+        extra_galaxies=extra_galaxies,
         dataset_model=dataset_model,
+    )
+
+    """
+    For single-dataset analyses, the following code does not change the model or analysis and can be ignored.
+
+    For multi-dataset analyses, the following code updates the model and analysis.
+    """
+    analysis = slam_util.analysis_multi_dataset_from(
+        analysis=analysis,
+        model=model,
+        multi_dataset_offset=True,
+        source_regularization_result=source_result_for_source,
     )
 
     search = af.Nautilus(

@@ -1,6 +1,7 @@
 import autofit as af
 import autolens as al
 
+from . import slam_util
 
 from typing import Union, Optional
 
@@ -13,6 +14,7 @@ def run(
     lens_bulge: Optional[af.Model] = af.Model(al.lp.Sersic),
     lens_disk: Optional[af.Model] = None,
     lens_point: Optional[af.Model] = None,
+    extra_galaxies: Optional[af.Collection] = None,
     dataset_model: Optional[af.Model] = None,
 ) -> af.Result:
     """
@@ -41,6 +43,8 @@ def run(
     lens_point
         The model used to represent the light distribution of the lens galaxy's point-source(s)
         emission (e.g. a nuclear star burst region) or compact central structures (e.g. an unresolved bulge).
+    extra_galaxies
+        Additional extra galaxies containing light and mass profiles, which model nearby line of sight galaxies.
     dataset_model
         Add aspects of the dataset to the model, for example the arc-second (y,x) offset between two datasets for
         multi-band fitting or the background sky level.
@@ -76,10 +80,20 @@ def run(
             ),
             source=source,
         ),
-        extra_galaxies=al.util.chaining.extra_galaxies_from(
-            result=source_result_for_lens, light_as_model=False
-        ),
+        extra_galaxies=extra_galaxies,
         dataset_model=dataset_model,
+    )
+
+    """
+    For single-dataset analyses, the following code does not change the model or analysis and can be ignored.
+
+    For multi-dataset analyses, the following code updates the model and analysis.
+    """
+    analysis = slam_util.analysis_multi_dataset_from(
+        analysis=analysis,
+        model=model,
+        multi_dataset_offset=True,
+        source_regularization_result=source_result_for_source,
     )
 
     search = af.Nautilus(

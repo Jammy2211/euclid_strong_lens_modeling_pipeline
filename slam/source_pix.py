@@ -1,6 +1,8 @@
 import autofit as af
 import autolens as al
 
+from . import slam_util
+
 from typing import Optional, Tuple, Union
 
 
@@ -14,6 +16,7 @@ def run_1(
     regularization_init: af.Model(al.AbstractRegularization) = af.Model(
         al.reg.AdaptiveBrightnessSplit
     ),
+    extra_galaxies: Optional[af.Collection] = None,
     dataset_model: Optional[af.Model] = None,
     fixed_mass_model: bool = False,
 ) -> af.Result:
@@ -47,9 +50,15 @@ def run_1(
     regularization_init
         The regularization, which places a smoothness prior on the source reconstruction, used by the pixelization
         which fits the source light in the initialization search (`search[1]`).
+    extra_galaxies
+        Additional extra galaxies containing light and mass profiles, which model nearby line of sight galaxies.
     dataset_model
         Add aspects of the dataset to the model, for example the arc-second (y,x) offset between two datasets for
         multi-band fitting or the background sky level.
+    fixed_mass_model
+        Whether the mass model is fixed from the SOURCE LP PIPELINE, which is generally used for multi-band fitting
+        where the mass model is fixed to the first band, albeit it may work for standard fitting if the SOURCE LP
+        PIPELINE provides a good mass model.
     """
 
     """
@@ -107,8 +116,20 @@ def run_1(
                 ),
             ),
         ),
-        extra_galaxies=al.util.chaining.extra_galaxies_from(result=source_lp_result),
+        extra_galaxies=extra_galaxies,
         dataset_model=dataset_model,
+    )
+
+    """
+    For single-dataset analyses, the following code does not change the model or analysis and can be ignored.
+
+    For multi-dataset analyses, the following code updates the model and analysis.
+    """
+    analysis = slam_util.analysis_multi_dataset_from(
+        analysis=analysis,
+        model=model,
+        multi_dataset_offset=True,
+        multi_source_regularization=True,
     )
 
     search = af.Nautilus(
@@ -162,6 +183,8 @@ def run_2(
     image_mesh_pixels_fixed
         The fixed number of pixels in the image-mesh, if an image-mesh with an input number of pixels is used
         (e.g. `Hilbert`).
+    extra_galaxies
+        Additional extra galaxies containing light and mass profiles, which model nearby line of sight galaxies.
     dataset_model
         Add aspects of the dataset to the model, for example the arc-second (y,x) offset between two datasets for
         multi-band fitting or the background sky level.
@@ -200,7 +223,7 @@ def run_2(
                 ),
             ),
         ),
-        extra_galaxies=al.util.chaining.extra_galaxies_from(result=source_lp_result),
+        extra_galaxies=source_pix_result_1.instance.extra_galaxies,
         dataset_model=dataset_model,
     )
 
@@ -209,6 +232,18 @@ def run_2(
             model.galaxies.source.pixelization.image_mesh.pixels = (
                 image_mesh_pixels_fixed
             )
+
+    """
+    For single-dataset analyses, the following code does not change the model or analysis and can be ignored.
+
+    For multi-dataset analyses, the following code updates the model and analysis.
+    """
+    analysis = slam_util.analysis_multi_dataset_from(
+        analysis=analysis,
+        model=model,
+        multi_dataset_offset=True,
+        multi_source_regularization=True,
+    )
 
     """
     __Search (Search 2)__
