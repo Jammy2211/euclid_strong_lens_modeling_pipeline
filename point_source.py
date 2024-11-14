@@ -60,11 +60,20 @@ def fit(
     The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
     output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
     are output to hard-disk.
+
+    There are a number of environment variables which must be set to ensure parallelization is efficient, which
+    are set below in this script to ensure the pipeline always runs efficiently even if you have not manually set them.
     """
     from autoconf import conf
 
     conf.instance["general"]["hpc"]["hpc_mode"] = True
     conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
+
+    os.environ["OPENBLAS_NUM_THREADS"] = "1"
+    os.environ["MKL_NUM_THREADS"] = "1"
+    os.environ["OMP_NUM_THREADS"] = "1"
+    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
+    os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
     """
     __Dataset__
