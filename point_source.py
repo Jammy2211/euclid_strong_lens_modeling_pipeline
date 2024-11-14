@@ -345,6 +345,6 @@ if __name__ == "__main__":
     fit(
         dataset_name=args.dataset,
         use_fluxes=args.use_fluxes,
-        number_of_cores=args.number_of_cores,
+        number_of_cores=int(args.number_of_cores),
         iterations_per_update=int(args.iterations_per_update),
     )

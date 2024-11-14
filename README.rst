@@ -70,8 +70,9 @@ Additional Pipelines
 The following additional pipelines are available in the repository:
 
 - ``group.py``: Lens modeling of group-scale lenses which have extra nearby galaxies whose light and mass must be modeled.
-- ``mge_only.py``: Perform a fast Multi-Gaussian Expansion (MGE) subtraction of the lens light, in order to better visualize the lensed source.
 - ``multi_wavelength.py``: After modeling the high resolution VIS imaging, model lower resolution NIR / EXT imaging using a fixed lens model.
+- ``point_source.py``: Model the lensed source as a point source, for example if its a strongly lensed quasar.
+- ``mge_only.py``: Perform a fast Multi-Gaussian Expansion (MGE) subtraction of the lens light, in order to better visualize the lensed source.
 
 All pipelines are run with the same API as the `start_here.py` script, for example:
 
@@ -82,6 +83,14 @@ All pipelines are run with the same API as the `start_here.py` script, for examp
 .. code-block:: bash
 
     python multi_wavelength.py --dataset=EUCLJ174517.55+655612.5 --mask_radius=2.0 --number_of_cores=4 --iterations_per_update=5000
+
+.. code-block:: bash
+
+    python point_source.py --dataset=point_example --number_of_cores=4 --iterations_per_update=10000
+
+.. code-block:: bash
+
+    python mge_only.py --dataset=example --mask_radius=2.0 --number_of_cores=4 --iterations_per_update=5000
 
 Documentation
 -------------
