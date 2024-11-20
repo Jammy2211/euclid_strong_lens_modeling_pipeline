@@ -331,6 +331,7 @@ if __name__ == "__main__":
         metavar="int",
         required=False,
         help="The number of cores to parallelize the fit",
+        default=1
     )
 
     parser.add_argument(
@@ -338,13 +339,22 @@ if __name__ == "__main__":
         metavar="int",
         required=False,
         help="The number of iterations between each update",
+        default=5000
     )
 
     args = parser.parse_args()
 
+    number_of_cores = int(args.number_of_cores) if args.number_of_cores is not None else 1
+    iterations_per_update = int(args.iterations_per_update) if args.iterations_per_update is not None else 5000
+
+    """
+    __Convert__
+
+    Convert from command line inputs of strings to correct types depending on if command line inputs are given.
+    """
     fit(
         dataset_name=args.dataset,
         use_fluxes=args.use_fluxes,
-        number_of_cores=int(args.number_of_cores),
-        iterations_per_update=int(args.iterations_per_update),
+        number_of_cores=args.number_of_cores,
+        iterations_per_update=args.iterations_per_update,
     )

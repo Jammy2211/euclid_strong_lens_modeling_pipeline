@@ -5,12 +5,13 @@ GUI Preprocessing: Extra Galaxies Centres
 There may be extra galaxies nearby the lens and source galaxies, whose emission blends with the lens and source
 and whose mass may contribute to the ray-tracing and lens model.
 
-The example `data_preparation/imaging/example/optional/extra_galaxies_centres.py` provides a full description of
-what the extra galaxies are and how they are used in the model-fit. You should read this script first before
-using this script.
+This script uses a GUI to mark the (y,x) arcsecond locations of these extra galaxies, each of which is then included
+in the lens model as light profiles (a Multi Gasusian Expansion) and mass profiles (singular isothermal spheres) if
+the `groups.py` pipeline is used (the `start_here.py` pipeline does not include extra galaxies for simplicity).
 
-This script uses a GUI to mark the (y,x) arcsecond locations of these extra galaxies, in contrast to the example
-above which requires you to input these values manually.
+Extra galaxies require that the mask is expanded to include their light, which is done by computing the radial
+distance of the furthest extra galaxy from the origin and adding a buffer. This mask is used in the `groups.py`
+pipeline to mask the lens and source galaxies and the extra galaxies.
 """
 # %matplotlib inline
 # from pyprojroot import here
@@ -18,10 +19,14 @@ above which requires you to input these values manually.
 # %cd $workspace_path
 # print(f"Working Directory has been set to `{workspace_path}`")
 
+import json
+import numpy as np
+import os
 from os import path
+from matplotlib import pyplot as plt
+
 import autolens as al
 import autolens.plot as aplt
-from matplotlib import pyplot as plt
 
 """
 __Dataset__
@@ -43,6 +48,20 @@ Load the image which we will use to mark the lens light centre.
 data = al.Array2D.from_fits(
     file_path=path.join(dataset_path, "data.fits"), pixel_scales=pixel_scales
 )
+"""
+__Mask__
+
+Create a 3.0" mask to plot over the image to guide where points should be marked.
+"""
+mask_radius = 3.0
+
+mask = al.Mask2D.circular(
+    shape_native=data.shape_native,
+    pixel_scales=data.pixel_scales,
+    radius=mask_radius
+)
+
+grid = mask.derive_grid.edge
 
 """
 __Search Box__
@@ -52,7 +71,7 @@ the highest flux to mark the position.
 
 The `search_box_size` is the number of pixels around your click this search takes place.
 """
-search_box_size = 5
+search_box_size = 3
 
 """
 __Clicker__
@@ -71,7 +90,10 @@ n_y, n_x = data.shape_native
 hw = int(n_x / 2) * pixel_scales
 ext = [-hw, hw, -hw, hw]
 fig = plt.figure(figsize=(14, 14))
-plt.imshow(data.native, cmap="jet", extent=ext)
+cmap = aplt.Cmap(cmap="jet", norm="log", vmin=1.0e-3, vmax=np.max(data) / 3.0)
+norm = cmap.norm_from(array=data, use_log10=True)
+plt.imshow(data.native, cmap="jet", norm=norm, extent=ext)
+plt.scatter(y=grid[:, 0], x=grid[:, 1], c="k", marker="x", s=10)
 plt.colorbar()
 cid = fig.canvas.mpl_connect("button_press_event", clicker.onclick)
 plt.show()
@@ -84,28 +106,63 @@ Use the results of the Clicker GUI to create the list of extra galaxy centres.
 extra_galaxies_centres = al.Grid2DIrregular(values=clicker.click_list)
 
 """
+__Mask Radius__
+
+The circular mask radius is calculated as the radial distance of the furthest extra galaxy from the origin,
+with a buffer of 0.2" added to this value.
+
+If the lens has no extra galaxies, the default mask radius of 3.0" is used instead.
+
+This will be used as the circular mask radius of any modeling pipeline if a user input value is not input
+(recommended behaviour).
+"""
+if len(extra_galaxies_centres) > 1:
+    extra_galaxies_radii = np.sqrt(extra_galaxies_centres[:, 0] ** 2 + extra_galaxies_centres[:, 1] ** 2)
+    extra_galaxies_radius_buffer = 0.2
+    extra_galaxies_max_radius = np.max(extra_galaxies_radii) + extra_galaxies_radius_buffer
+    mask_radius = max(mask_radius, extra_galaxies_max_radius)
+
+info = {}
+
+if os.path.exists(path.join(dataset_main_path, "info.json")):
+    try:
+        with open(path.join(dataset_main_path, "info.json")) as json_file:
+            info = json.load(json_file)
+            json_file.close()
+    except FileNotFoundError:
+        info = {}
+
+info["mask_radius"] = mask_radius
+
+with open(path.join(dataset_main_path, "info.json"), "w") as json_file:
+    json.dump(info, json_file)
+    json_file.close()
+
+"""
 __Output__
 
-Now lets plot the image and extra galaxy centres, so we can check that the centre overlaps the brightest pixels in the
-extra galaxies.
-"""
-visuals = aplt.Visuals2D(mass_profile_centres=extra_galaxies_centres)
-
-array_2d_plotter = aplt.Array2DPlotter(
-    array=data, visuals_2d=visuals, mat_plot_2d=aplt.MatPlot2D()
-)
-array_2d_plotter.figure_2d()
-
-"""
 Output this image of the extra galaxy centres to a .png file in the dataset folder for future reference.
 """
+mask = al.Mask2D.circular(
+    shape_native=data.shape_native,
+    pixel_scales=data.pixel_scales,
+    radius=mask_radius
+)
+
+visuals = aplt.Visuals2D(
+    mask=mask,
+    mass_profile_centres=extra_galaxies_centres
+)
+
 array_2d_plotter = aplt.Array2DPlotter(
     array=data,
     visuals_2d=visuals,
     mat_plot_2d=aplt.MatPlot2D(
+        mass_profile_centres_scatter=aplt.MassProfileCentresScatter(c="cy"),
         output=aplt.Output(
             path=dataset_main_path, filename="extra_galaxies_centres", format="png"
-        )
+        ),
+        use_log10=True
     ),
 )
 array_2d_plotter.figure_2d()

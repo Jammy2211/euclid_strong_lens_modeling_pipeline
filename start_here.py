@@ -139,6 +139,7 @@ def fit(
     number_of_cores: int = 1,
     iterations_per_update: int = 5000,
 ):
+    import json
     import numpy as np
     import os
     import sys
@@ -155,9 +156,9 @@ def fit(
     
     Load, plot and mask the `Imaging` data.
     """
-    dataset_name = dataset_name
     dataset_waveband = "vis"
-    dataset_path = path.join("dataset", dataset_name, dataset_waveband)
+    dataset_main_path = path.join("dataset", dataset_name)
+    dataset_path = path.join(dataset_main_path, dataset_waveband)
 
     dataset = al.Imaging.from_fits(
         data_path=path.join(dataset_path, "data.fits"),
@@ -165,6 +166,16 @@ def fit(
         psf_path=path.join(dataset_path, "psf.fits"),
         pixel_scales=0.1,
     )
+
+    try:
+        with open(path.join(dataset_main_path, "info.json")) as json_file:
+            info = json.load(json_file)
+            json_file.close()
+    except FileNotFoundError:
+        info = {}
+
+    if mask_radius is None:
+        mask_radius = info.get("mask_radius") or 3.0
 
     mask = al.Mask2D.circular(
         shape_native=dataset.shape_native,
@@ -573,6 +584,7 @@ if __name__ == "__main__":
         metavar="float",
         required=False,
         help="The Circular Radius of the Mask",
+        default=None
     )
 
     parser.add_argument(
@@ -580,6 +592,7 @@ if __name__ == "__main__":
         metavar="int",
         required=False,
         help="The number of cores to parallelize the fit",
+        default=1
     )
 
     parser.add_argument(
@@ -587,13 +600,26 @@ if __name__ == "__main__":
         metavar="int",
         required=False,
         help="The number of iterations between each update",
+        default=5000
     )
 
     args = parser.parse_args()
 
+    """
+    __Convert__
+    
+    Convert from command line inputs of strings to correct types depending on if command line inputs are given.
+    
+    If the mask radius input is not given, it is loaded from the dataset's info.json file in the `fit` function
+    or uses the default value of 3.0" if this is not available.
+    """
+    mask_radius = float(args.mask_radius) if args.mask_radius is not None else None
+    number_of_cores = int(args.number_of_cores) if args.number_of_cores is not None else 1
+    iterations_per_update = int(args.iterations_per_update) if args.iterations_per_update is not None else 5000
+
     fit(
         dataset_name=args.dataset,
-        mask_radius=float(args.mask_radius),
-        number_of_cores=int(args.number_of_cores),
-        iterations_per_update=int(args.iterations_per_update),
+        mask_radius=mask_radius,
+        number_of_cores=number_of_cores,
+        iterations_per_update=iterations_per_update,
     )

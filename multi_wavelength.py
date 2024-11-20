@@ -35,8 +35,6 @@ script  fits `Imaging` dataset  of a strong lens system where in the final model
  - The lens galaxy's light is a bulge with Multiple Gaussian Expansion (MGE) light profile.
  - The lens galaxy's total mass distribution is an `PowerLaw` plus an `ExternalShear`.
  - The source galaxy's light is a `Pixelization`.
- - Two extra galaxies are included in the model, each with their light represented as a bulge with MGE light profile
-   and their mass as a `IsothermalSph` profile.
 
 This modeling script uses the SLaM pipelines:
 
@@ -62,6 +60,7 @@ def fit(
     number_of_cores: int = 1,
     iterations_per_update: int = 5000,
 ):
+    import json
     import numpy as np
     import os
     import sys
@@ -76,7 +75,9 @@ def fit(
     """
     __Dataset__ 
     """
-    dataset_path = path.join("dataset", dataset_name, "vis")
+    dataset_waveband = "vis"
+    dataset_main_path = path.join("dataset", dataset_name)
+    dataset_path = path.join(dataset_main_path, dataset_waveband)
 
     dataset = al.Imaging.from_fits(
         data_path=path.join(dataset_path, "data.fits"),
@@ -112,7 +113,7 @@ def fit(
     """
     settings_search = af.SettingsSearch(
         path_prefix=path.join("euclid_pipeline", dataset_name),
-        unique_tag="vis",
+        unique_tag=dataset_waveband,
         info=None,
         number_of_cores=number_of_cores,
         session=None,
@@ -389,6 +390,7 @@ def fit_waveband(
     # %cd $workspace_path
     # print(f"Working Directory has been set to `{workspace_path}`")
 
+    import json
     import numpy as np
     import os
     import sys
@@ -432,7 +434,7 @@ def fit_waveband(
 
     Usual API to set up dataset paths, but include its "main` path which is before the waveband folders.
     """
-    dataset_main_path = path.join(cosma_dataset_path, dataset_name)
+    dataset_main_path = path.join("dataset", dataset_name)
 
     """
     __Dataset Wavebands__
@@ -447,6 +449,8 @@ def fit_waveband(
     """
     dataset_waveband_list = os.listdir(dataset_main_path)
     dataset_waveband_list.remove("vis")
+    dataset_waveband_list = [x for x in dataset_waveband_list if not x.endswith(".png")]
+    dataset_waveband_list = [x for x in dataset_waveband_list if not x.endswith(".json")]
     pixel_scale_list = [0.1] * len(dataset_waveband_list)
 
     """
@@ -489,6 +493,13 @@ def fit_waveband(
             psf_path=path.join(dataset_path, "psf.fits"),
             pixel_scales=pixel_scale,
         )
+
+        with open(path.join(dataset_main_path, "info.json")) as json_file:
+            info = json.load(json_file)
+            json_file.close()
+
+        if mask_radius is None:
+            mask_radius = info.get("mask_radius") or 3.0
 
         mask = al.Mask2D.circular(
             shape_native=dataset.shape_native,
@@ -694,6 +705,7 @@ if __name__ == "__main__":
         metavar="float",
         required=False,
         help="The Circular Radius of the Mask",
+        default=None
     )
 
     parser.add_argument(
@@ -701,6 +713,7 @@ if __name__ == "__main__":
         metavar="int",
         required=False,
         help="The number of cores to parallelize the fit",
+        default=1
     )
 
     parser.add_argument(
@@ -708,21 +721,35 @@ if __name__ == "__main__":
         metavar="int",
         required=False,
         help="The number of iterations between each update",
+        default=5000
     )
 
     args = parser.parse_args()
 
+    """
+    __Convert__
+
+    Convert from command line inputs of strings to correct types depending on if command line inputs are given.
+
+    If the mask radius input is not given, it is loaded from the dataset's info.json file in the `fit` function
+    or uses the default value of 3.0" if this is not available.
+    """
+    mask_radius = float(args.mask_radius) if args.mask_radius is not None else None
+    number_of_cores = int(args.number_of_cores) if args.number_of_cores is not None else 1
+    iterations_per_update = int(args.iterations_per_update) if args.iterations_per_update is not None else 5000
+
+
     mass_result = fit(
         dataset_name=args.dataset,
-        mask_radius=float(args.mask_radius),
-        number_of_cores=int(args.number_of_cores),
-        iterations_per_update=int(args.iterations_per_update),
+        mask_radius=mask_radius,
+        number_of_cores=number_of_cores,
+        iterations_per_update=iterations_per_update,
     )
 
     fit_waveband(
         mass_result=mass_result,
         dataset_name=args.dataset,
-        mask_radius=float(args.mask_radius),
-        number_of_cores=int(args.number_of_cores),
-        iterations_per_update=int(args.iterations_per_update),
+        mask_radius=mask_radius,
+        number_of_cores=number_of_cores,
+        iterations_per_update=iterations_per_update,
     )

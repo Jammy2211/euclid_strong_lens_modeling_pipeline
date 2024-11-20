@@ -30,6 +30,28 @@ centres or set up priors centre around these values.
 The `data_preparation` tutorial `autolens_workspace/*/data_preparation/imaging/examples/optional/extra_galaxies_centres.py`
 describes how to create these centres. Using this script they have been output to the `.json` file we load below.
 
+__Mask Radius__
+
+For group scale lenses, the radius of the circular mask applied to the data which contains the strong lens needs to be
+chosen carefully.
+
+The mask radius must contain the lens galaxy, source galaxy and extra galaxy emission, but also must not be
+so large too many extra galaxies are included.
+
+The GUI script used to mark the centres of extra galaxies includes a calculation which finds the extra galaxy with the
+maximum radial distance from the dataset centre at (0.0", 0.0") and writes this value plus a buffer of 0.2" to the
+`mask_radius` attribute of an `info.json` file found in the lens's dataset folder.
+
+The following logic is applied to determine the mask radius:
+
+1) If the user inputs the mask radius on the command line (e.g. `--mask_radius=3.0`) this value is used irrespective
+   of any other settings.
+
+2) If the user does not input a mask radius on the command line, the code looks for an `info.json` file in
+   the `dataset` folder of the strong lens and use the `mask_radius` attribute of `info.json` if it is there.
+
+3) If neither of the above two methods provide a value, a default value of 3.0" is used.
+
 __Preqrequisites__
 
 Before reading this script, you should have familiarity with the following key concepts:
@@ -63,10 +85,12 @@ If any code in this script is unclear, refer to the `chaining/start_here.ipynb` 
 
 def fit(
     dataset_name: str,
-    mask_radius: float = 3.0,
+    mask_radius: float = None,
     number_of_cores: int = 1,
     iterations_per_update: int = 5000,
 ):
+
+    import json
     import numpy as np
     import os
     import sys
@@ -93,6 +117,16 @@ def fit(
         psf_path=path.join(dataset_path, "psf.fits"),
         pixel_scales=0.1,
     )
+
+    try:
+        with open(path.join(dataset_main_path, "info.json")) as json_file:
+            info = json.load(json_file)
+            json_file.close()
+    except FileNotFoundError:
+        info = {}
+
+    if mask_radius is None:
+        mask_radius = info.get("mask_radius") or 3.0
 
     mask = al.Mask2D.circular(
         shape_native=dataset.shape_native,
@@ -124,8 +158,6 @@ def fit(
             file_path=path.join(dataset_main_path, "extra_galaxies_centres.json")
         )
     )
-
-    print(extra_galaxies_centres)
 
     """
     __Settings AutoFit__
@@ -508,6 +540,7 @@ if __name__ == "__main__":
         metavar="float",
         required=False,
         help="The Circular Radius of the Mask",
+        default=None
     )
 
     parser.add_argument(
@@ -515,6 +548,7 @@ if __name__ == "__main__":
         metavar="int",
         required=False,
         help="The number of cores to parallelize the fit",
+        default=1
     )
 
     parser.add_argument(
@@ -522,13 +556,26 @@ if __name__ == "__main__":
         metavar="int",
         required=False,
         help="The number of iterations between each update",
+        default=5000
     )
 
     args = parser.parse_args()
 
+    """
+    __Convert__
+
+    Convert from command line inputs of strings to correct types depending on if command line inputs are given.
+
+    If the mask radius input is not given, it is loaded from the dataset's info.json file in the `fit` function
+    or uses the default value of 3.0" if this is not available.
+    """
+    mask_radius = float(args.mask_radius) if args.mask_radius is not None else None
+    number_of_cores = int(args.number_of_cores) if args.number_of_cores is not None else 1
+    iterations_per_update = int(args.iterations_per_update) if args.iterations_per_update is not None else 5000
+
     fit(
         dataset_name=args.dataset,
-        mask_radius=float(args.mask_radius),
-        number_of_cores=int(args.number_of_cores),
-        iterations_per_update=int(args.iterations_per_update),
+        mask_radius=mask_radius,
+        number_of_cores=number_of_cores,
+        iterations_per_update=iterations_per_update,
     )
