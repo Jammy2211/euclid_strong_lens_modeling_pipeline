@@ -50,6 +50,10 @@ def fit(
         pixel_scales=0.1,
     )
 
+    dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
+        region=(-0.3, 0.3, -0.3, 0.3), box_size=2
+    )
+
     try:
         with open(path.join(dataset_main_path, "info.json")) as json_file:
             info = json.load(json_file)
@@ -72,7 +76,7 @@ def fit(
         grid=dataset.grid,
         sub_size_list=[4, 2, 1],
         radial_list=[0.1, 0.3],
-        centre_list=[(0.0, 0.0)],
+        centre_list=[dataset_centre],
     )
 
     dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
@@ -146,17 +150,20 @@ def fit(
 
     # Lens Light
 
-    centre_0 = af.GaussianPrior(mean=0.0, sigma=0.1)
-    centre_1 = af.GaussianPrior(mean=0.0, sigma=0.1)
-
-    total_gaussians = 20
+    total_gaussians = 30
     gaussian_per_basis = 2
 
-    log10_sigma_list = np.linspace(-2, np.log10(mask_radius), total_gaussians)
+    log10_sigma_list = np.linspace(-3, np.log10(mask_radius), total_gaussians)
+
+    centre_0 = af.UniformPrior(lower_limit=dataset_centre[0]-0.05, upper_limit=dataset_centre[0]+0.05)
+    centre_1 = af.UniformPrior(lower_limit=dataset_centre[1]-0.05, upper_limit=dataset_centre[1]+0.05)
 
     bulge_gaussian_list = []
 
     for j in range(gaussian_per_basis):
+        ell_comps_0 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+        ell_comps_1 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+
         gaussian_list = af.Collection(
             af.Model(al.lp_linear.Gaussian) for _ in range(total_gaussians)
         )
@@ -164,7 +171,8 @@ def fit(
         for i, gaussian in enumerate(gaussian_list):
             gaussian.centre.centre_0 = centre_0
             gaussian.centre.centre_1 = centre_1
-            gaussian.ell_comps = gaussian_list[0].ell_comps
+            gaussian.ell_comps.ell_comps_0 = ell_comps_0
+            gaussian.ell_comps.ell_comps_1 = ell_comps_1
             gaussian.sigma = 10 ** log10_sigma_list[i]
 
         bulge_gaussian_list += gaussian_list
