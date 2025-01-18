@@ -118,6 +118,10 @@ def fit(
         pixel_scales=0.1,
     )
 
+    dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
+        region=(-0.3, 0.3, -0.3, 0.3), box_size=2
+    )
+
     try:
         with open(path.join(dataset_main_path, "info.json")) as json_file:
             info = json.load(json_file)
@@ -136,17 +140,6 @@ def fit(
 
     dataset = dataset.apply_mask(mask=mask)
 
-    dataset = dataset.apply_over_sampling(
-        over_sampling=al.OverSamplingDataset(
-            uniform=al.OverSamplingUniform.from_radial_bins(
-                grid=dataset.grid,
-                sub_size_list=[4, 2, 1],
-                radial_list=[0.1, 0.3],
-                centre_list=[(0.0, 0.0)],
-            )
-        )
-    )
-
     dataset_plotter = aplt.ImagingPlotter(dataset=dataset)
     dataset_plotter.subplot_dataset()
 
@@ -158,6 +151,15 @@ def fit(
             file_path=path.join(dataset_main_path, "extra_galaxies_centres.json")
         )
     )
+
+    over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
+        grid=dataset.grid,
+        sub_size_list=[4, 2, 1],
+        radial_list=[0.1, 0.3],
+        centre_list=[dataset_centre] + extra_galaxies_centres.in_list,
+    )
+
+    dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
     """
     __Settings AutoFit__
@@ -500,8 +502,8 @@ def fit(
     The `start_hre.ipynb` example describes how results can be output to hard-disk after the SLaM pipelines have been run.
     Checkout that script for a complete description of the output of this script.
     """
-    slam.slam_util.output_model_to_fits(
-        output_path=path.join(dataset_path, "model"),
+    slam.slam_util.output_result_to_fits(
+        output_path=path.join(dataset_path, "result"),
         result=mass_result,
         model_lens_light=True,
         model_source_light=True,
@@ -509,7 +511,7 @@ def fit(
     )
 
     slam.slam_util.output_model_results(
-        output_path=path.join(dataset_path, "model"),
+        output_path=path.join(dataset_path, "result"),
         result=mass_result,
         filename="model.results",
     )

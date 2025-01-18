@@ -20,9 +20,13 @@ lens model quantities like the Einstein Radius.
 Please contact James Nightingale on the Euclid Consortium Slack with any questions or if you would like other
 information on the pipeline.
 
-The text below is taken from the **PyAutoLens** documentation and describes the pipeline in more detail. You do
-not need to understand things like the prequisites, pipeline structure, design choices, etc in order to run
-the pipeline as a black box, the text is simply there for your information.
+__Black Box Description__
+
+The text below is taken from the **PyAutoLens** documentation and describes the pipeline in more detail. 
+
+You do not need to understand the text in sections like "Prequisites", "Pipeline Structure", "Design Choices", etc in 
+order to run the pipeline as a black box, the text is simply there to provide additional information if you
+are interested in how the pipeline works.
 
 __SLaM (Source, Light and Mass)__
 
@@ -167,6 +171,10 @@ def fit(
         pixel_scales=0.1,
     )
 
+    dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
+        region=(-0.3, 0.3, -0.3, 0.3), box_size=2
+    )
+
     try:
         with open(path.join(dataset_main_path, "info.json")) as json_file:
             info = json.load(json_file)
@@ -185,16 +193,14 @@ def fit(
 
     dataset = dataset.apply_mask(mask=mask)
 
-    dataset = dataset.apply_over_sampling(
-        over_sampling=al.OverSamplingDataset(
-            uniform=al.OverSamplingUniform.from_radial_bins(
-                grid=dataset.grid,
-                sub_size_list=[4, 2, 1],
-                radial_list=[0.1, 0.3],
-                centre_list=[(0.0, 0.0)],
-            )
-        )
+    over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
+        grid=dataset.grid,
+        sub_size_list=[4, 2, 1],
+        radial_list=[0.1, 0.3],
+        centre_list=[dataset_centre],
     )
+
+    dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
     dataset_plotter = aplt.ImagingPlotter(dataset=dataset)
     dataset_plotter.subplot_dataset()
@@ -269,17 +275,20 @@ def fit(
 
     # Lens Light
 
-    centre_0 = af.GaussianPrior(mean=0.0, sigma=0.1)
-    centre_1 = af.GaussianPrior(mean=0.0, sigma=0.1)
-
-    total_gaussians = 20
+    total_gaussians = 30
     gaussian_per_basis = 2
 
-    log10_sigma_list = np.linspace(-2, np.log10(mask_radius), total_gaussians)
+    log10_sigma_list = np.linspace(-3, np.log10(mask_radius), total_gaussians)
+
+    centre_0 = af.UniformPrior(lower_limit=dataset_centre[0]-0.05, upper_limit=dataset_centre[0]+0.05)
+    centre_1 = af.UniformPrior(lower_limit=dataset_centre[1]-0.05, upper_limit=dataset_centre[1]+0.05)
 
     bulge_gaussian_list = []
 
     for j in range(gaussian_per_basis):
+        ell_comps_0 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+        ell_comps_1 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+
         gaussian_list = af.Collection(
             af.Model(al.lp_linear.Gaussian) for _ in range(total_gaussians)
         )
@@ -287,7 +296,8 @@ def fit(
         for i, gaussian in enumerate(gaussian_list):
             gaussian.centre.centre_0 = centre_0
             gaussian.centre.centre_1 = centre_1
-            gaussian.ell_comps = gaussian_list[0].ell_comps
+            gaussian.ell_comps.ell_comps_0 = ell_comps_0
+            gaussian.ell_comps.ell_comps_1 = ell_comps_1
             gaussian.sigma = 10 ** log10_sigma_list[i]
 
         bulge_gaussian_list += gaussian_list
@@ -335,7 +345,7 @@ def fit(
         mass=af.Model(al.mp.Isothermal),
         shear=af.Model(al.mp.ExternalShear),
         source_bulge=source_bulge,
-        mass_centre=(0.0, 0.0),
+        mass_centre=dataset_centre,
         redshift_lens=redshift_lens,
         redshift_source=redshift_source,
     )
@@ -380,7 +390,7 @@ def fit(
         analysis=analysis,
         source_lp_result=source_lp_result,
         mesh_init=al.mesh.Delaunay,
-        image_mesh_init_shape=(20, 20),
+        image_mesh_init_shape=(30, 30),
     )
 
     """
@@ -445,7 +455,10 @@ def fit(
         adapt_image_maker=al.AdaptImageMaker(result=source_pix_result_1),
     )
 
-    total_gaussians = 20
+    centre_0 = af.GaussianPrior(mean=dataset_centre[0], sigma=0.1)
+    centre_1 = af.GaussianPrior(mean=dataset_centre[1], sigma=0.1)
+
+    total_gaussians = 30
     gaussian_per_basis = 2
 
     log10_sigma_list = np.linspace(-2, np.log10(mask_radius), total_gaussians)
@@ -453,14 +466,18 @@ def fit(
     bulge_gaussian_list = []
 
     for j in range(gaussian_per_basis):
+        ell_comps_0 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+        ell_comps_1 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+
         gaussian_list = af.Collection(
             af.Model(al.lp_linear.Gaussian) for _ in range(total_gaussians)
         )
 
         for i, gaussian in enumerate(gaussian_list):
-            gaussian.centre.centre_0 = gaussian_list[0].centre.centre_0
-            gaussian.centre.centre_1 = gaussian_list[0].centre.centre_1
-            gaussian.ell_comps = gaussian_list[0].ell_comps
+            gaussian.centre.centre_0 = centre_0
+            gaussian.centre.centre_1 = centre_1
+            gaussian.ell_comps.ell_comps_0 = ell_comps_0
+            gaussian.ell_comps.ell_comps_1 = ell_comps_1
             gaussian.sigma = 10 ** log10_sigma_list[i]
 
         bulge_gaussian_list += gaussian_list
@@ -520,6 +537,7 @@ def fit(
         source_result_for_source=source_pix_result_2,
         light_result=light_result,
         mass=af.Model(al.mp.Isothermal),
+        reset_shear_prior=True
     )
 
     """
@@ -542,34 +560,58 @@ def fit(
      - A text `model.results` file containing the lens model parameter estimates.
      - A subplot containing the fit in one row, which is output to .png.
      - A subplot of the source reconstruction in the source plane in one row, which is output to .png.
+     - Separate results for the MGE fit and pixelization fit are output to the dataset folder as .fits files.
     
     """
-    slam.slam_util.output_model_to_fits(
-        output_path=path.join(dataset_path, "model"),
+    slam.slam_util.update_result_json_file(
+        file_path=path.join(dataset_main_path, "result.json"),
+        result=mass_result,
+        waveband=dataset_waveband,
+        einstein_radius=True,
+        fluxes=True,
+    )
+
+    slam.slam_util.output_result_to_fits(
+        output_path=path.join(dataset_path, "result"),
+        result=source_lp_result,
+        model_lens_light=True,
+        model_source_light=True,
+        mge_source_reconstruction=True,
+        prefix="mge_",
+        tag=dataset_waveband,
+        remove_fits_first=True,
+    )
+
+    slam.slam_util.output_result_to_fits(
+        output_path=path.join(dataset_path, "result"),
         result=mass_result,
         model_lens_light=True,
         model_source_light=True,
         source_reconstruction=True,
+        source_reconstruction_noise_map=True,
+        remove_fits_first=True,
+        tag=dataset_waveband,
     )
 
     slam.slam_util.output_model_results(
-        output_path=path.join(dataset_path, "model"),
+        output_path=path.join(dataset_path, "result"),
         result=mass_result,
-        filename="model.results",
+        filename="sie_model_results.txt",
     )
 
     slam.slam_util.output_fit_multi_png(
-        output_path=dataset_path,
+        output_path=path.join(dataset_path, "result"),
         result_list=[mass_result],
-        filename="sie_fit",
+        filename="sie_fit_pix",
+        tag_prefix=f"{dataset_waveband}{dataset_name}"
     )
 
     slam.slam_util.output_source_multi_png(
-        output_path=dataset_path,
+        output_path=path.join(dataset_path, "result"),
         result_list=[mass_result],
         filename="source_reconstruction",
+        tag_prefix=f"{dataset_waveband}{dataset_name}"
     )
-
 
 if __name__ == "__main__":
     import argparse

@@ -1,6 +1,6 @@
-Bayesian Evidence                                                               2990.24539264
-Maximum Log Likelihood                                                          2994.85056283
-Maximum Log Posterior                                                           3000.38819017
+Bayesian Evidence                                                               4243.16007483
+Maximum Log Likelihood                                                          4247.76524501
+Maximum Log Posterior                                                           4249.64032790
 
 model                                                                           Collection (N=7)
     galaxies                                                                    Collection (N=7)
@@ -21,15 +21,15 @@ galaxies
     lens
         mass
             ell_comps
-                ell_comps_0                                                     -0.844
-                ell_comps_1                                                     -0.746
-            einstein_radius                                                     1.529
+                ell_comps_0                                                     0.446
+                ell_comps_1                                                     0.270
+            einstein_radius                                                     0.368
             centre
-                centre_0                                                        -0.021
-                centre_1                                                        -0.079
+                centre_0                                                        -0.008
+                centre_1                                                        0.079
         shear
-            gamma_1                                                             0.070
-            gamma_2                                                             -0.038
+            gamma_1                                                             -0.057
+            gamma_2                                                             0.062
 
  WARNING: The samples have not converged enough to compute a PDF and model errors. 
  The model below over estimates errors. 
@@ -42,15 +42,15 @@ galaxies
     lens
         mass
             ell_comps
-                ell_comps_0                                                     -0.8441 (-1.1721, -0.2069)
-                ell_comps_1                                                     -0.7457 (-0.7457, 0.1740)
-            einstein_radius                                                     1.5289 (0.5801, 3.2592)
+                ell_comps_0                                                     0.4460 (-0.0768, 0.7269)
+                ell_comps_1                                                     0.2704 (-0.0160, 0.8191)
+            einstein_radius                                                     0.3675 (0.0744, 0.7398)
             centre
-                centre_0                                                        -0.0213 (-0.1487, 0.0427)
-                centre_1                                                        -0.0788 (-0.1488, 0.1059)
+                centre_0                                                        -0.0080 (-0.1794, 0.0438)
+                centre_1                                                        0.0789 (-0.0648, 0.1508)
         shear
-            gamma_1                                                             0.0700 (-0.1359, 0.1374)
-            gamma_2                                                             -0.0379 (-0.2405, 0.0256)
+            gamma_1                                                             -0.0569 (-0.1816, 0.0434)
+            gamma_2                                                             0.0616 (-0.0163, 0.2295)
 
 instances
 
@@ -108,9 +108,9 @@ galaxies
             value                                                               1.0
         pixelization
             regularization
-                inner_coefficient                                               0.1087910258091503
-                outer_coefficient                                               0.44794239756366
-                signal_scale                                                    0.19740692359214
+                inner_coefficient                                               0.5610158312535516
+                outer_coefficient                                               9.343040711160779e-05
+                signal_scale                                                    0.79528618661481
             image_mesh
-                weight_floor                                                    0.0004964219842962819
-                weight_power                                                    1.65078372022663
+                weight_floor                                                    1.2296201159677752e-05
+                weight_power                                                    2.88497795601353

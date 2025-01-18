@@ -305,7 +305,7 @@ def fit(
     result = search.fit(model=model, analysis=analysis)
 
     slam.slam_util.output_model_results(
-        output_path=path.join(dataset_path, "model"),
+        output_path=path.join(dataset_path, "result"),
         result=result,
         filename="model.results",
     )

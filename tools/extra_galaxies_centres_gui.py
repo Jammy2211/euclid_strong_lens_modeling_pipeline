@@ -48,6 +48,7 @@ Load the image which we will use to mark the lens light centre.
 data = al.Array2D.from_fits(
     file_path=path.join(dataset_path, "data.fits"), pixel_scales=pixel_scales
 )
+
 """
 __Mask__
 

@@ -34,7 +34,7 @@ Run the pipeline with the example dataset:
 
 .. code-block:: bash
 
-    python start_here.py --dataset=example --mask_radius=2.0 --number_of_cores=4 --iterations_per_update=5000
+    python start_here.py --dataset=example --mask_radius=3.0 --number_of_cores=4 --iterations_per_update=5000
 
 The pipeline will run on the example dataset, outputting results to the `output` folder and in the `dataset` folder,
 and it can be easily modified to run on your own data.

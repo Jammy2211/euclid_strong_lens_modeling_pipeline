@@ -86,6 +86,20 @@ def fit(
         pixel_scales=0.1,
     )
 
+    dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
+        region=(-0.3, 0.3, -0.3, 0.3), box_size=2
+    )
+
+    try:
+        with open(path.join(dataset_main_path, "info.json")) as json_file:
+            info = json.load(json_file)
+            json_file.close()
+    except FileNotFoundError:
+        info = {}
+
+    if mask_radius is None:
+        mask_radius = info.get("mask_radius") or 3.0
+
     mask = al.Mask2D.circular(
         shape_native=dataset.shape_native,
         pixel_scales=dataset.pixel_scales,
@@ -94,16 +108,14 @@ def fit(
 
     dataset = dataset.apply_mask(mask=mask)
 
-    dataset = dataset.apply_over_sampling(
-        over_sampling=al.OverSamplingDataset(
-            uniform=al.OverSamplingUniform.from_radial_bins(
-                grid=dataset.grid,
-                sub_size_list=[4, 2, 1],
-                radial_list=[0.1, 0.3],
-                centre_list=[(0.0, 0.0)],
-            )
-        )
+    over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
+        grid=dataset.grid,
+        sub_size_list=[4, 2, 1],
+        radial_list=[0.1, 0.3],
+        centre_list=[dataset_centre],
     )
+
+    dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
     dataset_plotter = aplt.ImagingPlotter(dataset=dataset)
     dataset_plotter.subplot_dataset()
@@ -158,17 +170,20 @@ def fit(
 
     # Lens Light
 
-    centre_0 = af.GaussianPrior(mean=0.0, sigma=0.1)
-    centre_1 = af.GaussianPrior(mean=0.0, sigma=0.1)
-
-    total_gaussians = 20
+    total_gaussians = 30
     gaussian_per_basis = 2
 
-    log10_sigma_list = np.linspace(-2, np.log10(mask_radius), total_gaussians)
+    log10_sigma_list = np.linspace(-3, np.log10(mask_radius), total_gaussians)
+
+    centre_0 = af.UniformPrior(lower_limit=dataset_centre[0] - 0.05, upper_limit=dataset_centre[0] + 0.05)
+    centre_1 = af.UniformPrior(lower_limit=dataset_centre[1] - 0.05, upper_limit=dataset_centre[1] + 0.05)
 
     bulge_gaussian_list = []
 
     for j in range(gaussian_per_basis):
+        ell_comps_0 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+        ell_comps_1 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+
         gaussian_list = af.Collection(
             af.Model(al.lp_linear.Gaussian) for _ in range(total_gaussians)
         )
@@ -176,7 +191,8 @@ def fit(
         for i, gaussian in enumerate(gaussian_list):
             gaussian.centre.centre_0 = centre_0
             gaussian.centre.centre_1 = centre_1
-            gaussian.ell_comps = gaussian_list[0].ell_comps
+            gaussian.ell_comps.ell_comps_0 = ell_comps_0
+            gaussian.ell_comps.ell_comps_1 = ell_comps_1
             gaussian.sigma = 10 ** log10_sigma_list[i]
 
         bulge_gaussian_list += gaussian_list
@@ -224,7 +240,7 @@ def fit(
         mass=af.Model(al.mp.Isothermal),
         shear=af.Model(al.mp.ExternalShear),
         source_bulge=source_bulge,
-        mass_centre=(0.0, 0.0),
+        mass_centre=dataset_centre,
         redshift_lens=redshift_lens,
         redshift_source=redshift_source,
     )
@@ -245,7 +261,7 @@ def fit(
         analysis=analysis,
         source_lp_result=source_lp_result,
         mesh_init=al.mesh.Delaunay,
-        image_mesh_init_shape=(20, 20),
+        image_mesh_init_shape=(30, 30),
     )
 
     """
@@ -281,7 +297,10 @@ def fit(
         adapt_image_maker=al.AdaptImageMaker(result=source_pix_result_1),
     )
 
-    total_gaussians = 20
+    centre_0 = af.GaussianPrior(mean=dataset_centre[0], sigma=0.1)
+    centre_1 = af.GaussianPrior(mean=dataset_centre[1], sigma=0.1)
+
+    total_gaussians = 30
     gaussian_per_basis = 2
 
     log10_sigma_list = np.linspace(-2, np.log10(mask_radius), total_gaussians)
@@ -289,14 +308,18 @@ def fit(
     bulge_gaussian_list = []
 
     for j in range(gaussian_per_basis):
+        ell_comps_0 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+        ell_comps_1 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
+
         gaussian_list = af.Collection(
             af.Model(al.lp_linear.Gaussian) for _ in range(total_gaussians)
         )
 
         for i, gaussian in enumerate(gaussian_list):
-            gaussian.centre.centre_0 = gaussian_list[0].centre.centre_0
-            gaussian.centre.centre_1 = gaussian_list[0].centre.centre_1
-            gaussian.ell_comps = gaussian_list[0].ell_comps
+            gaussian.centre.centre_0 = centre_0
+            gaussian.centre.centre_1 = centre_1
+            gaussian.ell_comps.ell_comps_0 = ell_comps_0
+            gaussian.ell_comps.ell_comps_1 = ell_comps_1
             gaussian.sigma = 10 ** log10_sigma_list[i]
 
         bulge_gaussian_list += gaussian_list
@@ -333,42 +356,68 @@ def fit(
         source_result_for_source=source_pix_result_2,
         light_result=light_result,
         mass=af.Model(al.mp.Isothermal),
+        reset_shear_prior=True
     )
 
     """
     __Output__
     """
-    slam.slam_util.output_model_to_fits(
-        output_path=path.join(dataset_path, "model"),
+    slam.slam_util.update_result_json_file(
+        file_path=path.join(dataset_main_path, "result.json"),
+        result=mass_result,
+        waveband=dataset_waveband,
+        einstein_radius=True,
+        fluxes=True,
+    )
+
+    slam.slam_util.output_result_to_fits(
+        output_path=path.join(dataset_path, "result"),
+        result=source_lp_result,
+        model_lens_light=True,
+        model_source_light=True,
+        mge_source_reconstruction=True,
+        prefix="mge_",
+        tag=dataset_waveband,
+        remove_fits_first=True,
+    )
+
+    slam.slam_util.output_result_to_fits(
+        output_path=path.join(dataset_path, "result"),
         result=mass_result,
         model_lens_light=True,
         model_source_light=True,
         source_reconstruction=True,
+        source_reconstruction_noise_map=True,
+        remove_fits_first=True,
+        tag=dataset_waveband,
     )
 
     slam.slam_util.output_model_results(
-        output_path=path.join(dataset_path, "model"),
+        output_path=path.join(dataset_path, "result"),
         result=mass_result,
-        filename="model.results",
+        filename="sie_model_results.txt",
     )
 
     slam.slam_util.output_fit_multi_png(
-        output_path=dataset_path,
+        output_path=path.join(dataset_path, "result"),
         result_list=[mass_result],
-        filename="sie_fit",
+        filename="sie_fit_pix",
+        tag_prefix=f"{dataset_waveband}{dataset_name}"
     )
 
     slam.slam_util.output_source_multi_png(
-        output_path=dataset_path,
+        output_path=path.join(dataset_path, "result"),
         result_list=[mass_result],
         filename="source_reconstruction",
+        tag_prefix=f"{dataset_waveband}{dataset_name}"
     )
 
-    return mass_result
+    return source_lp_result, mass_result
 
 
 def fit_waveband(
     dataset_name: str,
+    source_lp_result,
     mass_result,
     mask_radius: float = 3.0,
     number_of_cores: int = 1,
@@ -428,30 +477,45 @@ def fit_waveband(
     os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
     os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
+    """
+    __Configs__
+    """
+    from autoconf import conf
+
+    conf.instance["visualize"]["general"]["units"][
+        "cb_unit"
+    ] = r"$\,\,\mathrm{e^{-}}\,\mathrm{s^{-1}}$"
+
+    from euclid import slam
 
     """
     __Dataset__
 
     Usual API to set up dataset paths, but include its "main` path which is before the waveband folders.
     """
+    dataset_waveband = "vis"
     dataset_main_path = path.join("dataset", dataset_name)
+    dataset_path = path.join(dataset_main_path, dataset_waveband)
 
     """
     __Dataset Wavebands__
 
-    The following list gives the names of the wavebands we are going to fit. 
-
+    The following dictionary gives the names of the wavebands we are going to fit and maps them to their
+    hdu in the FITS file. 
+    
+    The standard MER cutout goes VIS, NIR_Y, NIR_J, NIR_H, and is used in this pipeline.
+    
+    The send dictionary, which is commented out, is an example of a dataset included EXT data from ground based
+    telescopes as well, which is often used in Euclid pipelines.
+    
     The data for each waveband is loaded from a folder in the dataset folder with that name, where the vis
     datasets fitted above is removed from the list.
 
     The pixel scale of each waveband is assumed to be 0.1" as EXT data is sampler to the same resolution as VIS,
     if this is not true this will need to be updated.
     """
-    dataset_waveband_list = os.listdir(dataset_main_path)
-    dataset_waveband_list.remove("vis")
-    dataset_waveband_list = [x for x in dataset_waveband_list if not x.endswith(".png")]
-    dataset_waveband_list = [x for x in dataset_waveband_list if not x.endswith(".json")]
-    pixel_scale_list = [0.1] * len(dataset_waveband_list)
+    dataset_index_dict = {"vis" : 0, "nir_y" : 1, "nir_j" : 2, "nir_h" : 3}
+    # dataset_index_dict = {"meg_u" : 0, "hsc_g" : 1, "meg_r" : 2, "vis" : 3, "hsc_z" : 4, "nir_y" : 5, "nir_j" : 6, "nir_h" : 7}
 
     """
     __Dataset Model__
@@ -482,24 +546,56 @@ def fit_waveband(
     The results of each fit are stored in a dictionary, which is used to pass the results of each fit to the
     visualization functions.
     """
-    multi_result_dict = {"vis": mass_result}
+    multi_result_lp_dict = {"vis" : source_lp_result}
+    multi_result_pix_dict = {"vis": mass_result}
 
-    for dataset_waveband, pixel_scale in zip(dataset_waveband_list, pixel_scale_list):
+    for i in range(len(dataset_index_dict.keys())):
+
+        dataset_waveband = list(dataset_index_dict.keys())[i]
+        dataset_main_path = path.join("dataset", dataset_name)
         dataset_path = path.join(dataset_main_path, dataset_waveband)
+        dataset_fits_name = f"{dataset_name}.fits"
+
+        if dataset_waveband == "vis":
+            continue
+
+        dataset_index = dataset_index_dict[dataset_waveband]
 
         dataset = al.Imaging.from_fits(
-            data_path=path.join(dataset_path, "data.fits"),
-            noise_map_path=path.join(dataset_path, "noise_map.fits"),
-            psf_path=path.join(dataset_path, "psf.fits"),
-            pixel_scales=pixel_scale,
+            data_path=path.join(dataset_path, dataset_fits_name),
+            data_hdu=dataset_index*3+1,
+            noise_map_path=path.join(dataset_path, dataset_fits_name),
+            noise_map_hdu=dataset_index*3+3,
+            psf_path=path.join(dataset_path, dataset_fits_name),
+            psf_hdu=dataset_index*3+2,
+            pixel_scales=0.1,
+            check_noise_map=False,
         )
 
-        with open(path.join(dataset_main_path, "info.json")) as json_file:
-            info = json.load(json_file)
-            json_file.close()
+        dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
+            region=(-0.3, 0.3, -0.3, 0.3), box_size=2
+        )
 
-        if mask_radius is None:
-            mask_radius = info.get("mask_radius") or 3.0
+        """
+        __Dataset Model__
+
+        For each fit, the (y,x) offset of the secondary data from the primary data is a free parameter. 
+
+        This is achieved by setting up a `DatasetModel` for each waveband, which extends the model with components
+        including the grid offset.
+
+        This ensures that if the datasets are offset with respect to one another, the model can correct for this,
+        with sub-pixel offsets often being important in lens modeling as the precision of a lens model can often be
+        less than the requirements on astrometry.
+        """
+        dataset_model = af.Model(al.DatasetModel)
+
+        dataset_model.grid_offset.grid_offset_0 = af.UniformPrior(
+            lower_limit=-0.2, upper_limit=0.2
+        )
+        dataset_model.grid_offset.grid_offset_1 = af.UniformPrior(
+            lower_limit=-0.2, upper_limit=0.2
+        )
 
         mask = al.Mask2D.circular(
             shape_native=dataset.shape_native,
@@ -507,18 +603,14 @@ def fit_waveband(
             radius=mask_radius,
         )
 
-        dataset = dataset.apply_mask(mask=mask)
-
-        dataset = dataset.apply_over_sampling(
-            over_sampling=al.OverSamplingDataset(
-                uniform=al.OverSamplingUniform.from_radial_bins(
-                    grid=dataset.grid,
-                    sub_size_list=[4, 2, 1],
-                    radial_list=[0.1, 0.3],
-                    centre_list=[(0.0, 0.0)],
-                )
-            )
+        over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
+            grid=dataset.grid,
+            sub_size_list=[4, 2, 1],
+            radial_list=[0.1, 0.3],
+            centre_list=[dataset_centre],
         )
+
+        dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
         dataset_plotter = aplt.ImagingPlotter(dataset=dataset)
         dataset_plotter.subplot_dataset()
@@ -594,6 +686,18 @@ def fit_waveband(
             dataset_model=dataset_model,
         )
 
+        multi_result_lp_dict[dataset_waveband] = source_lp_result
+
+        slam.slam_util.output_result_to_fits(
+            output_path=path.join(dataset_path, "result"),
+            result=source_lp_result,
+            model_lens_light=True,
+            model_source_light=True,
+            mge_source_reconstruction=True,
+            tag=dataset_waveband,
+            prefix="mge_",
+        )
+
         """
         __SOURCE PIX PIPELINE (with lens light)__
 
@@ -612,15 +716,19 @@ def fit_waveband(
             raise_inversion_positions_likelihood_exception=False,
         )
 
-        dataset_model.grid_offset.grid_offset_0 = source_lp_result.instance.dataset_model.grid_offset[0]
-        dataset_model.grid_offset.grid_offset_1 = source_lp_result.instance.dataset_model.grid_offset[1]
+        dataset_model.grid_offset.grid_offset_0 = (
+            source_lp_result.instance.dataset_model.grid_offset[0]
+        )
+        dataset_model.grid_offset.grid_offset_1 = (
+            source_lp_result.instance.dataset_model.grid_offset[1]
+        )
 
         source_pix_result_1 = slam.source_pix.run_1(
             settings_search=settings_search,
             analysis=analysis,
             source_lp_result=source_lp_result,
             mesh_init=al.mesh.Delaunay,
-            image_mesh_init_shape=(20, 20),
+            image_mesh_init_shape=(30, 30),
             dataset_model=dataset_model,
             fixed_mass_model=True,
         )
@@ -640,8 +748,12 @@ def fit_waveband(
             ),
         )
 
-        dataset_model.grid_offset.grid_offset_0 = source_lp_result.instance.dataset_model.grid_offset[0]
-        dataset_model.grid_offset.grid_offset_1 = source_lp_result.instance.dataset_model.grid_offset[1]
+        dataset_model.grid_offset.grid_offset_0 = (
+            source_lp_result.instance.dataset_model.grid_offset[0]
+        )
+        dataset_model.grid_offset.grid_offset_1 = (
+            source_lp_result.instance.dataset_model.grid_offset[1]
+        )
 
         multi_result = slam.source_pix.run_2(
             settings_search=settings_search,
@@ -655,41 +767,48 @@ def fit_waveband(
             dataset_model=dataset_model,
         )
 
-        multi_result_dict[dataset_waveband] = multi_result
+        multi_result_pix_dict[dataset_waveband] = multi_result
 
-        slam.slam_util.output_model_to_fits(
-            output_path=path.join(dataset_path, "model"),
+        slam.slam_util.output_result_to_fits(
+            output_path=path.join(dataset_path, "result"),
             result=multi_result,
             model_lens_light=True,
             model_source_light=True,
             source_reconstruction=True,
+            source_reconstruction_noise_map=True,
+            tag=dataset_waveband,
         )
 
-        slam.slam_util.output_model_results(
-            output_path=path.join(dataset_path, "model"),
-            result=multi_result,
-            filename="sie_model.results",
-        )
 
-    tag_list = list(multi_result_dict.keys())
+    tag_list = list(multi_result_pix_dict.keys())
 
     slam.slam_util.output_fit_multi_png(
-        output_path=path.join(dataset_main_path),
+        output_path=path.join(dataset_path, "result"),
         result_list=[
-            multi_result_dict[dataset_waveband] for dataset_waveband in tag_list
+            multi_result_lp_dict[dataset_waveband] for dataset_waveband in tag_list
         ],
-        tag_list=tag_list,
-        filename="sie_fit",
+        tag_list=[tag + dataset_name for tag in tag_list],
+        filename="sie_fit_mge",
+    )
+
+    slam.slam_util.output_fit_multi_png(
+        output_path=path.join(dataset_path, "result"),
+        result_list=[
+            multi_result_pix_dict[dataset_waveband] for dataset_waveband in tag_list
+        ],
+        tag_list=[tag + dataset_name for tag in tag_list],
+        filename="sie_fit_pix",
     )
 
     slam.slam_util.output_source_multi_png(
-        output_path=path.join(dataset_main_path),
+        output_path=path.join(dataset_path, "result"),
         result_list=[
-            multi_result_dict[dataset_waveband] for dataset_waveband in tag_list
+            multi_result_pix_dict[dataset_waveband] for dataset_waveband in tag_list
         ],
-        tag_list=tag_list,
+        tag_list=[tag + dataset_name for tag in tag_list],
         filename="source_reconstruction",
     )
+
 
 
 if __name__ == "__main__":
@@ -739,7 +858,7 @@ if __name__ == "__main__":
     iterations_per_update = int(args.iterations_per_update) if args.iterations_per_update is not None else 5000
 
 
-    mass_result = fit(
+    source_lp_result, mass_result = fit(
         dataset_name=args.dataset,
         mask_radius=mask_radius,
         number_of_cores=number_of_cores,
@@ -747,6 +866,7 @@ if __name__ == "__main__":
     )
 
     fit_waveband(
+        source_lp_result=source_lp_result,
         mass_result=mass_result,
         dataset_name=args.dataset,
         mask_radius=mask_radius,
