@@ -104,18 +104,38 @@ def fit(
 
     """
     __Dataset__ 
-    
+
     Load, plot and mask the `Imaging` data.
+
+    __VIS Index__
+
+    The `vis_index` parameter is key to ensuring the VIS dataset is fitted in the `fit` pipeline.
+
+    It corresponds to the hdu index of the VIS imaging data in your .fits dataset, but is also used to load
+    the PSF and noise-map data from the dataset folder of the lens you're modeling, as seen for
+    the `Imaging.from_fits` method below.
+
+    For the majority of strong lens MER cutouts, the vis_index will be 0 because the image is in hdu 1, the PSF in hdu 2
+    and the noise-map in hdu 3.
+
+    MER cutouts including EXT data may not conform to this convention, however, so always be sure to check the
+    .fits files of the dataset you're using to make sure the vis_index is correct!
     """
-    dataset_waveband = "vis"
     dataset_main_path = path.join("dataset", dataset_name)
-    dataset_path = path.join(dataset_main_path, dataset_waveband)
+    dataset_path = path.join(dataset_main_path)
+    dataset_fits_name = f"{dataset_name}.fits"
+
+    vis_index = 0
 
     dataset = al.Imaging.from_fits(
-        data_path=path.join(dataset_path, "data.fits"),
-        noise_map_path=path.join(dataset_path, "noise_map.fits"),
-        psf_path=path.join(dataset_path, "psf.fits"),
+        data_path=path.join(dataset_main_path, dataset_fits_name),
+        data_hdu=vis_index * 3 + 1,
+        noise_map_path=path.join(dataset_main_path, dataset_fits_name),
+        noise_map_hdu=vis_index * 3 + 3,
+        psf_path=path.join(dataset_main_path, dataset_fits_name),
+        psf_hdu=vis_index * 3 + 2,
         pixel_scales=0.1,
+        check_noise_map=False,
     )
 
     dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
@@ -166,8 +186,10 @@ def fit(
 
     The settings of autofit, which controls the output paths, parallelization, database use, etc.
     """
+    dataset_waveband = "vis"
+
     settings_search = af.SettingsSearch(
-        path_prefix=path.join("euclid_group_pipeline"),
+        path_prefix=path.join("euclid_groups", dataset_name),
         unique_tag=dataset_waveband,
         info=None,
         number_of_cores=number_of_cores,

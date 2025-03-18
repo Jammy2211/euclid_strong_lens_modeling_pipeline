@@ -10,9 +10,9 @@ to run the pipeline as a black-box on Euclid data.
 Getting Started
 ---------------
 
-**PyAutoLens** supports Python 3.9 to 3.11, with **Python 3.11 recommended**.
+**PyAutoLens** supports Python 3.9 to 3.12, with **Python 3.11 recommended**.
 
-You first may want to set up a **Python virtual environment** or **conda enviuroment** to install the pipeline
+You first may want to set up a **Python virtual environment** or **conda environment** to install the pipeline
 in (see https://docs.python.org/3/library/venv.html).
 
 Next, install **PyAutoLens** via pip:
@@ -36,7 +36,7 @@ Run the pipeline with the example dataset:
 
     python start_here.py --dataset=example --mask_radius=3.0 --number_of_cores=4 --iterations_per_update=5000
 
-The pipeline will run on the example dataset, outputting results to the `output` folder and in the `dataset` folder,
+The pipeline will run on the example dataset, outputting results to the ``output`` folder and in the ``dataset`` folder,
 and it can be easily modified to run on your own data.
 
 The pipeline above is parallelized using 4 cores and results are output on-the-fly during the model fitting
@@ -82,7 +82,7 @@ All pipelines are run with the same API as the `start_here.py` script, for examp
 
 .. code-block:: bash
 
-    python multi_wavelength.py --dataset=EUCLJ174517.55+655612.5 --mask_radius=2.0 --number_of_cores=4 --iterations_per_update=5000
+    python multi_wavelength.py --dataset=example --mask_radius=2.0 --number_of_cores=4 --iterations_per_update=5000
 
 .. code-block:: bash
 

@@ -3,7 +3,7 @@ import csv
 import json
 import numpy as np
 from os import path
-from typing import Dict, List, Union
+from typing import Dict, List, Optional, Union
 
 import os
 from astropy.io import fits
@@ -17,11 +17,14 @@ import autolens.plot as aplt
 
 
 def update_result_json_file(
-    file_path: str,
-    result,
-    waveband,
-    einstein_radius: bool = False,
-    fluxes: bool = False,
+        file_path: str,
+        result,
+        waveband,
+        einstein_radius: bool = False,
+        fluxes: bool = False,
+        fluxes_with_errors: bool = False,
+        magnitude: bool = False,
+        zero_point: float = Optional[None],
 ):
     """
     The `result.json` file is output to the `dataset/lens_name` folder and it contains all keys lens modeling
@@ -45,16 +48,17 @@ def update_result_json_file(
     except FileNotFoundError:
         result_dict = {}
 
+    samples = result.samples
+
     if einstein_radius:
         tracer = result.max_log_likelihood_tracer
         einstein_radius = tracer.einstein_radius_from(grid=result.grids.lp)
         result_dict["einstein_radius_max_lh"] = einstein_radius
 
-        samples = result.samples
-
         einstein_radius_list = []
 
         for i in range(50):
+
             instance = samples.draw_randomly_via_pdf()
 
             tracer = result.analysis.tracer_via_instance_from(instance=instance)
@@ -73,12 +77,12 @@ def update_result_json_file(
         result_dict["einstein_radius_upper_3_sigma"] = upper_einstein_radius
 
     if fluxes:
+
         tracer = result.max_log_likelihood_tracer
 
-        grid = al.Grid2D.uniform(shape_native=(1000, 1000), pixel_scales=0.02)
-        image = tracer.galaxies[0].image_2d_from(grid=grid)
+        image = tracer.galaxies[0].image_2d_from(grid=result.grids.lp)
         total_lens_flux = np.sum(image)
-        result_dict[f"{waveband}_total_lens_flux"] = total_lens_flux
+        result_dict[f"{waveband}_total_lens_flux_max_lh"] = total_lens_flux
 
         inversion = result.max_log_likelihood_fit.inversion
         mapper = inversion.cls_list_from(cls=al.AbstractMapper)[0]
@@ -90,25 +94,156 @@ def update_result_json_file(
 
         mapped_reconstructed_image = mapper_valued.mapped_reconstructed_image_from()
         total_lensed_source_flux = np.sum(mapped_reconstructed_image)
-        result_dict[f"{waveband}_total_lensed_source_flux"] = total_lensed_source_flux
+        result_dict[f"{waveband}_total_lensed_source_flux_max_lh"] = total_lensed_source_flux
 
         reconstruction = inversion.reconstruction_dict[mapper]
 
         total_source_flux = np.sum(reconstruction)
-        result_dict[f"{waveband}_total_source_flux"] = total_source_flux
+        result_dict[f"{waveband}_total_source_flux_max_lh"] = total_source_flux
 
         magnification = mapper_valued.magnification_via_interpolation_from()
-        result_dict[f"{waveband}_magnification"] = magnification
+        result_dict[f"{waveband}_magnification_max_lh"] = magnification
 
         lensed_source_image = result.max_log_likelihood_fit.model_images_of_planes_list[
             -1
         ]
         signal_to_noise_map = (
-            lensed_source_image / result.max_log_likelihood_fit.dataset.noise_map
+                lensed_source_image / result.max_log_likelihood_fit.dataset.noise_map
         )
         result_dict[f"{waveband}_max_lensed_source_signal_to_noise_ratio"] = np.max(
             signal_to_noise_map
         )
+
+        if magnitude:
+            lens_magnitude_ab = - 2.5 * np.log10(total_lens_flux) + zero_point
+            lensed_source_magnitude_ab = - 2.5 * np.log10(total_lensed_source_flux) + zero_point
+            source_magnitude_ab = - 2.5 * np.log10(total_source_flux) + zero_point
+
+            result_dict[f"{waveband}_lens_magnitude_ab_max_lh"] = lens_magnitude_ab
+            result_dict[f"{waveband}_lensed_source_magnitude_ab_max_lh"] = lensed_source_magnitude_ab
+            result_dict[f"{waveband}_source_magnitude_ab_max_lh"] = source_magnitude_ab
+
+    if fluxes_with_errors:
+
+        total_lens_flux_list = []
+        total_lensed_source_flux_list = []
+        total_source_flux_list = []
+        total_magnification_list = []
+        lens_magnitude_ab_list = []
+        lensed_source_magnitude_ab_list = []
+        source_magnitude_ab_list = []
+
+        for i in range(50):
+
+            instance = samples.draw_randomly_via_pdf()
+
+            fit = result.analysis.fit_from(instance=instance)
+            tracer = fit.tracer_linear_light_profiles_to_light_profiles
+
+            image = tracer.galaxies[0].image_2d_from(grid=result.grids.lp)
+
+            total_lens_flux = np.sum(image)
+            total_lens_flux_list.append(total_lens_flux)
+
+            inversion = fit.inversion
+            mapper = inversion.cls_list_from(cls=al.AbstractMapper)[0]
+
+            mapper_valued = al.MapperValued(
+                mapper=mapper,
+                values=inversion.reconstruction_dict[mapper],
+            )
+
+            mapped_reconstructed_image = mapper_valued.mapped_reconstructed_image_from()
+            total_lensed_source_flux = np.sum(mapped_reconstructed_image)
+
+            total_lensed_source_flux_list.append(total_lensed_source_flux)
+
+            reconstruction = inversion.reconstruction_dict[mapper]
+            total_source_flux = np.sum(reconstruction)
+            total_source_flux_list.append(total_source_flux)
+
+            magnification = mapper_valued.magnification_via_interpolation_from(shape_native=(101, 101))
+            total_magnification_list.append(magnification)
+
+            lens_magnitude_ab = - 2.5 * np.log10(total_lens_flux) + zero_point
+            lens_magnitude_ab_list.append(lens_magnitude_ab)
+
+            lensed_source_magnitude_ab = - 2.5 * np.log10(total_lensed_source_flux) + zero_point
+            lensed_source_magnitude_ab_list.append(lensed_source_magnitude_ab)
+
+            source_magnitude_ab = - 2.5 * np.log10(total_source_flux) + zero_point
+            source_magnitude_ab_list.append(source_magnitude_ab)
+
+        (
+            median_total_lens_flux,
+            lower_total_lens_flux,
+            upper_total_lens_flux,
+        ) = af.marginalize(parameter_list=total_lens_flux_list, sigma=3.0)
+
+        result_dict[f"{waveband}_total_lens_flux_median_pdf"] = median_total_lens_flux
+        result_dict[f"{waveband}_total_lens_flux_lower_3_sigma"] = lower_total_lens_flux
+        result_dict[f"{waveband}_total_lens_flux_upper_3_sigma"] = upper_total_lens_flux
+
+        (
+            median_total_lensed_source_flux,
+            lower_total_lensed_source_flux,
+            upper_total_lensed_source_flux,
+        ) = af.marginalize(parameter_list=total_lensed_source_flux_list, sigma=3.0)
+
+        result_dict[f"{waveband}_total_lensed_source_flux_median_pdf"] = median_total_lensed_source_flux
+        result_dict[f"{waveband}_total_lensed_source_flux_lower_3_sigma"] = lower_total_lensed_source_flux
+        result_dict[f"{waveband}_total_lensed_source_flux_upper_3_sigma"] = upper_total_lensed_source_flux
+
+        (
+            median_total_source_flux,
+            lower_total_source_flux,
+            upper_total_source_flux,
+        ) = af.marginalize(parameter_list=total_source_flux_list, sigma=3.0)
+
+        result_dict[f"{waveband}_total_source_flux_median_pdf"] = median_total_source_flux
+        result_dict[f"{waveband}_total_source_flux_lower_3_sigma"] = lower_total_source_flux
+        result_dict[f"{waveband}_total_source_flux_upper_3_sigma"] = upper_total_source_flux
+
+        (
+            median_total_magnification,
+            lower_total_magnification,
+            upper_total_magnification,
+        ) = af.marginalize(parameter_list=total_magnification_list, sigma=3.0)
+
+        result_dict[f"{waveband}_total_magnification_median_pdf"] = median_total_magnification
+        result_dict[f"{waveband}_total_magnification_lower_3_sigma"] = lower_total_magnification
+        result_dict[f"{waveband}_total_magnification_upper_3_sigma"] = upper_total_magnification
+
+        if magnitude:
+            (
+                median_lens_magnitude_ab,
+                lower_lens_magnitude_ab,
+                upper_lens_magnitude_ab,
+            ) = af.marginalize(parameter_list=lens_magnitude_ab_list, sigma=3.0)
+
+            result_dict[f"{waveband}_lens_magnitude_ab_median_pdf"] = median_lens_magnitude_ab
+            result_dict[f"{waveband}_lens_magnitude_ab_lower_3_sigma"] = lower_lens_magnitude_ab
+            result_dict[f"{waveband}_lens_magnitude_ab_upper_3_sigma"] = upper_lens_magnitude_ab
+
+            (
+                median_lensed_source_magnitude_ab,
+                lower_lensed_source_magnitude_ab,
+                upper_lensed_source_magnitude_ab,
+            ) = af.marginalize(parameter_list=lensed_source_magnitude_ab_list, sigma=3.0)
+
+            result_dict[f"{waveband}_lensed_source_magnitude_ab_median_pdf"] = median_lensed_source_magnitude_ab
+            result_dict[f"{waveband}_lensed_source_magnitude_ab_lower_3_sigma"] = lower_lensed_source_magnitude_ab
+            result_dict[f"{waveband}_lensed_source_magnitude_ab_upper_3_sigma"] = upper_lensed_source_magnitude_ab
+
+            (
+                median_source_magnitude_ab,
+                lower_source_magnitude_ab,
+                upper_source_magnitude_ab,
+            ) = af.marginalize(parameter_list=source_magnitude_ab_list, sigma=3.0)
+
+            result_dict[f"{waveband}_source_magnitude_ab_median_pdf"] = median_source_magnitude_ab
+            result_dict[f"{waveband}_source_magnitude_ab_lower_3_sigma"] = lower_source_magnitude_ab
+            result_dict[f"{waveband}_source_magnitude_ab_upper_3_sigma"] = upper_source_magnitude_ab
 
     with open(file_path, "w") as f:
         json.dump(result_dict, f, indent=4)

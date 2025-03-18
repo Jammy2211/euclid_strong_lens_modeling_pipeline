@@ -74,16 +74,38 @@ def fit(
 
     """
     __Dataset__ 
+
+    Load, plot and mask the `Imaging` data.
+
+    __VIS Index__
+
+    The `vis_index` parameter is key to ensuring the VIS dataset is fitted in the `fit` pipeline.
+
+    It corresponds to the hdu index of the VIS imaging data in your .fits dataset, but is also used to load
+    the PSF and noise-map data from the dataset folder of the lens you're modeling, as seen for
+    the `Imaging.from_fits` method below.
+
+    For the majority of strong lens MER cutouts, the vis_index will be 0 because the image is in hdu 1, the PSF in hdu 2
+    and the noise-map in hdu 3.
+
+    MER cutouts including EXT data may not conform to this convention, however, so always be sure to check the
+    .fits files of the dataset you're using to make sure the vis_index is correct!
     """
-    dataset_waveband = "vis"
     dataset_main_path = path.join("dataset", dataset_name)
-    dataset_path = path.join(dataset_main_path, dataset_waveband)
+    dataset_path = path.join(dataset_main_path)
+    dataset_fits_name = f"{dataset_name}.fits"
+
+    vis_index = 0
 
     dataset = al.Imaging.from_fits(
-        data_path=path.join(dataset_path, "data.fits"),
-        noise_map_path=path.join(dataset_path, "noise_map.fits"),
-        psf_path=path.join(dataset_path, "psf.fits"),
+        data_path=path.join(dataset_main_path, dataset_fits_name),
+        data_hdu=vis_index * 3 + 1,
+        noise_map_path=path.join(dataset_main_path, dataset_fits_name),
+        noise_map_hdu=vis_index * 3 + 3,
+        psf_path=path.join(dataset_main_path, dataset_fits_name),
+        psf_hdu=vis_index * 3 + 2,
         pixel_scales=0.1,
+        check_noise_map=False,
     )
 
     dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
@@ -123,8 +145,10 @@ def fit(
     """
     __Settings AutoFit__
     """
+    dataset_waveband = "vis"
+
     settings_search = af.SettingsSearch(
-        path_prefix=path.join("euclid_pipeline", dataset_name),
+        path_prefix=path.join("euclid_multi_wavelength", dataset_name),
         unique_tag=dataset_waveband,
         info=None,
         number_of_cores=number_of_cores,
@@ -133,6 +157,11 @@ def fit(
 
     """
     __Redshifts__
+
+    The redshifts of the lens and source galaxies.
+
+    These are placeholders for now given we probably don't know the redshifts of the lens and source galaxies,
+    but amnually input via command line can be added.
     """
     redshift_lens = 0.5
     redshift_source = 1.0
@@ -165,6 +194,19 @@ def fit(
 
     """
     __SOURCE LP PIPELINE__
+
+    The SOURCE LP PIPELINE uses one search to initialize a robust model for the source galaxy's light, which in 
+    this example:
+
+     - Uses a multi Gaussian expansion with 2 sets of 20 Gaussians for the lens galaxy's light.
+
+     - Uses an `Isothermal` model for the lens's total mass distribution with an `ExternalShear`.
+
+     - Uses a multi Gaussian expansion with 1 set of 20 Gaussians for the source galaxy's light.
+
+     __Settings__:
+
+     - Mass Centre: Fix the mass profile centre to (0.0, 0.0) (this assumption will be relaxed in the MASS TOTAL PIPELINE).
     """
     analysis = al.AnalysisImaging(dataset=dataset)
 
@@ -247,6 +289,30 @@ def fit(
 
     """
     __SOURCE PIX PIPELINE__
+
+    The SOURCE PIX PIPELINE uses two searches to initialize a robust model for the `Pixelization` that
+    reconstructs the source galaxy's light. 
+
+    This pixelization adapts its source pixels to the morphology of the source, placing more pixels in its 
+    brightest regions. To do this, an "adapt image" is required, which is the lens light subtracted image meaning
+    only the lensed source emission is present.
+
+    The SOURCE LP Pipeline result is not good enough quality to set up this adapt image (e.g. the source
+    may be more complex than a simple light profile). The first step of the SOURCE PIX PIPELINE therefore fits a new
+    model using a pixelization to create this adapt image.
+
+    The first search, which is an initialization search, fits an `Overlay` image-mesh, `Delaunay` mesh 
+    and `AdaptiveBrightnessSplit` regularization.
+
+    __Adapt Images / Image Mesh Settings__
+
+    If you are unclear what the `adapt_images` and `SettingsInversion` inputs are doing below, refer to the 
+    `autolens_workspace/*/imaging/advanced/chaining/pix_adapt/start_here.py` example script.
+
+    __Settings__:
+
+     - Positions: We update the positions and positions threshold using the previous model-fitting result (as described 
+     in `chaining/examples/parametric_to_pixelization.py`) to remove unphysical solutions from the `Inversion` model-fitting.
     """
     analysis = al.AnalysisImaging(
         dataset=dataset,
@@ -266,6 +332,23 @@ def fit(
 
     """
     __SOURCE PIX PIPELINE 2 (with lens light)__
+
+    The second search, which uses the mesh and regularization used throughout the remainder of the SLaM pipelines,
+    fits the following model:
+
+    - Uses a `Hilbert` image-mesh. 
+
+    - Uses a `Delaunay` mesh.
+
+     - Uses an `AdaptiveBrightnessSplit` regularization.
+
+     - Carries the lens redshift, source redshift and `ExternalShear` of the SOURCE LP PIPELINE through to the
+     SOURCE PIX PIPELINE.
+
+    The `Hilbert` image-mesh and `AdaptiveBrightness` regularization adapt the source pixels and regularization weights
+    to the source's morphology.
+
+    Below, we therefore set up the adapt image using this result.
     """
     analysis = al.AnalysisImaging(
         dataset=dataset,
@@ -290,7 +373,19 @@ def fit(
     )
 
     """
-    __LIGHT LP PIPELINE__  
+    __LIGHT LP PIPELINE__
+
+    The LIGHT LP PIPELINE uses one search to fit a complex lens light model to a high level of accuracy, using the
+    lens mass model and source light model fixed to the maximum log likelihood result of the SOURCE LP PIPELINE.
+    In this example it:
+
+     - Uses a multi Gaussian expansion with 2 sets of 20 Gaussians for the lens galaxy's light. [6 Free Parameters].
+
+     - Uses an `Isothermal` mass model with `ExternalShear` for the lens's total mass distribution [fixed from SOURCE PIX PIPELINE].
+
+     - Uses a `Pixelization` for the source's light [fixed from SOURCE PIX PIPELINE].
+
+     - Carries the lens redshift and source redshift of the SOURCE PIPELINE through to the MASS PIPELINE [fixed values].   
     """
     analysis = al.AnalysisImaging(
         dataset=dataset,
@@ -340,6 +435,29 @@ def fit(
 
     """
     __MASS TOTAL PIPELINE__
+
+    The MASS TOTAL PIPELINE uses one search to fits a complex lens mass model to a high level of accuracy, 
+    using the lens mass model and source model of the SOURCE PIX PIPELINE to initialize the model priors and the lens 
+    light model of the LIGHT LP PIPELINE. 
+
+    In this example it:
+
+     - Uses a linear Multi Gaussian Expansion bulge [fixed from LIGHT LP PIPELINE].
+
+     - Uses an `PowerLaw` model for the lens's total mass distribution [priors initialized from SOURCE 
+     PARAMETRIC PIPELINE + centre unfixed from (0.0, 0.0)].
+
+     - Uses a `Pixelization` for the source's light [fixed from SOURCE PIX PIPELINE].
+
+     - Carries the lens redshift and source redshift of the SOURCE PIPELINE through to the MASS TOTAL PIPELINE.
+
+    __Settings__:
+
+     - adapt: We may be using adapt features and therefore pass the result of the SOURCE PIX PIPELINE to use as the
+     hyper dataset if required.
+
+     - Positions: We update the positions and positions threshold using the previous model-fitting result (as described 
+     in `chaining/examples/parametric_to_pixelization.py`) to remove unphysical solutions from the `Inversion` model-fitting.
     """
     analysis = al.AnalysisImaging(
         dataset=dataset,
@@ -361,13 +479,43 @@ def fit(
 
     """
     __Output__
+
+    The SLaM pipeline above outputs the model-fitting results to the `output` folder of the workspace, which includes
+    the usual model results, visualization, and .json files.
+
+    As described in the `autolens_workspace/*/results` package there is an API for loading these results from hard disk
+    to Python, for example so they can be manipulated in a Juypter notebook.
+
+    However, it is also often useful to output the results to the dataset folder of each lens in standard formats, for
+    example images of the lens and lensed source in .fits or visualization outputs like .png files. This makes transferring
+    the results more portable, especially if they are to be used by other people.
+
+    The `slam_util` module provides convenience methods for outputting many results to the dataset folder, we
+    use it below to output the following results:
+
+     - Images of the model lens light, lensed source light and source reconstruction to .fits files.
+     - A text `model.results` file containing the lens model parameter estimates.
+     - A subplot containing the fit in one row, which is output to .png.
+     - A subplot of the source reconstruction in the source plane in one row, which is output to .png.
+     - Separate results for the MGE fit and pixelization fit are output to the dataset folder as .fits files.
+
     """
+    header = al.util.array_2d.header_obj_from(
+        file_path=path.join(dataset_main_path, dataset_fits_name),
+        hdu=vis_index * 3 + 1,
+    )
+
+    zero_point = header["MAGZERO"]
+
     slam.slam_util.update_result_json_file(
         file_path=path.join(dataset_main_path, "result.json"),
         result=mass_result,
         waveband=dataset_waveband,
         einstein_radius=True,
         fluxes=True,
+        fluxes_with_errors=True,
+        magnitude=True,
+        zero_point=zero_point,
     )
 
     slam.slam_util.output_result_to_fits(
@@ -489,9 +637,9 @@ def fit_waveband(
     from euclid import slam
 
     """
-    __Dataset__
+    __Dataset__ 
 
-    Usual API to set up dataset paths, but include its "main` path which is before the waveband folders.
+    Load, plot and mask the `Imaging` data.
     """
     dataset_waveband = "vis"
     dataset_main_path = path.join("dataset", dataset_name)
@@ -619,10 +767,11 @@ def fit_waveband(
         __Settings AutoFit__
         """
         settings_search = af.SettingsSearch(
-            path_prefix=path.join("euclid_pipeline", dataset_name),
+            path_prefix=path.join("euclid_multi_wavelength", dataset_name),
             unique_tag=dataset_waveband,
             info=None,
             number_of_cores=number_of_cores,
+            session=None,
         )
 
         """
@@ -778,6 +927,24 @@ def fit_waveband(
             source_reconstruction_noise_map=True,
             tag=dataset_waveband,
         )
+
+        header = al.util.array_2d.header_obj_from(
+            file_path=path.join(dataset_main_path, dataset_fits_name),
+            hdu=dataset_index*3+1,
+        )
+
+        zero_point = header["MAGZERO"]
+
+        slam.slam_util.update_result_json_file(
+            file_path=path.join(dataset_main_path, "result.json"),
+            result=multi_result,
+            waveband=dataset_waveband,
+            fluxes=True,
+            fluxes_with_errors=True,
+            magnitude=True,
+            zero_point=zero_point,
+        )
+
 
 
     tag_list = list(multi_result_pix_dict.keys())
