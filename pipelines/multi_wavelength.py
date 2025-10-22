@@ -48,26 +48,27 @@ __Start Here Notebook__
 If any code in this script is unclear, refer to the `chaining/start_here.ipynb` notebook.
 """
 
-
 """
 Everything below is identical to `start_here.py` and thus not commented, as it is the same code.
 """
 
+from util import AnalysisImaging
 
 def fit(
     dataset_name: str,
     mask_radius: float = 3.0,
-    number_of_cores: int = 1,
-    iterations_per_update: int = 5000,
+    iterations_per_quick_update: int = 5000,
 ):
+
     import json
     import numpy as np
     import os
     import sys
-    from os import path
+    from pathlib import Path
+
+    from autoconf import conf
     import autofit as af
     import autolens as al
-    import autolens.plot as aplt
 
     sys.path.insert(0, os.getcwd())
     import slam
@@ -91,41 +92,54 @@ def fit(
     MER cutouts including EXT data may not conform to this convention, however, so always be sure to check the
     .fits files of the dataset you're using to make sure the vis_index is correct!
     """
-    dataset_main_path = path.join("dataset", dataset_name)
-    dataset_path = path.join(dataset_main_path)
+    dataset_main_path = Path("dataset") / dataset_name
     dataset_fits_name = f"{dataset_name}.fits"
 
-    vis_index = 0
+    vis_index = 3
 
     dataset = al.Imaging.from_fits(
-        data_path=path.join(dataset_main_path, dataset_fits_name),
+        data_path=dataset_main_path / dataset_fits_name,
         data_hdu=vis_index * 3 + 1,
-        noise_map_path=path.join(dataset_main_path, dataset_fits_name),
+        noise_map_path=dataset_main_path / dataset_fits_name,
         noise_map_hdu=vis_index * 3 + 3,
-        psf_path=path.join(dataset_main_path, dataset_fits_name),
+        psf_path=dataset_main_path / dataset_fits_name,
         psf_hdu=vis_index * 3 + 2,
         pixel_scales=0.1,
         check_noise_map=False,
     )
+
 
     dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
         region=(-0.3, 0.3, -0.3, 0.3), box_size=2
     )
 
     try:
-        with open(path.join(dataset_main_path, "info.json")) as json_file:
+        with open(dataset_main_path / "info.json") as json_file:
             info = json.load(json_file)
             json_file.close()
     except FileNotFoundError:
         info = {}
 
+    try:
+        mask_extra_galaxies = al.Mask2D.from_fits(
+            file_path=f"{dataset_main_path}/mask_extra_galaxies.fits",
+            pixel_scales=0.1,
+            invert=True,
+        )
+
+        dataset = dataset.apply_noise_scaling(mask=mask_extra_galaxies)
+    except FileNotFoundError:
+        pass
+
     if mask_radius is None:
         mask_radius = info.get("mask_radius") or 3.0
+    mask_centre = info.get("mask_centre") or (0.0, 0.0)
 
     mask = al.Mask2D.circular(
         shape_native=dataset.shape_native,
         pixel_scales=dataset.pixel_scales,
         radius=mask_radius,
+        centre=mask_centre,
     )
 
     dataset = dataset.apply_mask(mask=mask)
@@ -139,19 +153,28 @@ def fit(
 
     dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
-    dataset_plotter = aplt.ImagingPlotter(dataset=dataset)
-    dataset_plotter.subplot_dataset()
+    """
+    __Positions__
+    """
+    try:
+        positions = al.Grid2DIrregular(
+            values=al.from_json(file_path=dataset_main_path / "positions.json")
+        )
+        positions_likelihood_list = [al.PositionsLH(threshold=0.1, positions=positions)]
+    except FileNotFoundError:
+        positions_likelihood_list = None
 
     """
     __Settings AutoFit__
+
+    The settings of autofit, which controls the output paths, parallelization, database use, etc.
     """
     dataset_waveband = "vis"
 
     settings_search = af.SettingsSearch(
-        path_prefix=path.join("euclid_multi_wavelength", dataset_name),
+        path_prefix=Path("lens") / dataset_name,
         unique_tag=dataset_waveband,
         info=None,
-        number_of_cores=number_of_cores,
         session=None,
     )
 
@@ -161,36 +184,10 @@ def fit(
     The redshifts of the lens and source galaxies.
 
     These are placeholders for now given we probably don't know the redshifts of the lens and source galaxies,
-    but amnually input via command line can be added.
+    but manually input via command line can be added.
     """
     redshift_lens = 0.5
     redshift_source = 1.0
-
-    """
-    __HPC Mode__
-
-    When running in parallel via Python `multiprocessing`, display issues with the `matplotlib` backend can arise
-    and cause the code to crash.
-
-    HPC mode sets the backend to mitigate this issue and is set to run throughout the entire pipeline below.
-
-    The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
-    output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
-    are output to hard-disk.
-
-    There are a number of environment variables which must be set to ensure parallelization is efficient, which
-    are set below in this script to ensure the pipeline always runs efficiently even if you have not manually set them.
-    """
-    from autoconf import conf
-
-    conf.instance["general"]["hpc"]["hpc_mode"] = True
-    conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
-
-    os.environ["OPENBLAS_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-    os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
     """
     __SOURCE LP PIPELINE__
@@ -198,7 +195,7 @@ def fit(
     The SOURCE LP PIPELINE uses one search to initialize a robust model for the source galaxy's light, which in 
     this example:
 
-     - Uses a multi Gaussian expansion with 2 sets of 20 Gaussians for the lens galaxy's light.
+     - Uses a multi Gaussian expansion with 2 sets of 30 Gaussians for the lens galaxy's light.
 
      - Uses an `Isothermal` model for the lens's total mass distribution with an `ExternalShear`.
 
@@ -208,7 +205,9 @@ def fit(
 
      - Mass Centre: Fix the mass profile centre to (0.0, 0.0) (this assumption will be relaxed in the MASS TOTAL PIPELINE).
     """
-    analysis = al.AnalysisImaging(dataset=dataset)
+    analysis = AnalysisImaging(
+        dataset=dataset, positions_likelihood_list=[positions_likelihood]
+    )
 
     # Lens Light
 
@@ -217,8 +216,12 @@ def fit(
 
     log10_sigma_list = np.linspace(-3, np.log10(mask_radius), total_gaussians)
 
-    centre_0 = af.UniformPrior(lower_limit=dataset_centre[0] - 0.05, upper_limit=dataset_centre[0] + 0.05)
-    centre_1 = af.UniformPrior(lower_limit=dataset_centre[1] - 0.05, upper_limit=dataset_centre[1] + 0.05)
+    centre_0 = af.UniformPrior(
+        lower_limit=dataset_centre[0] - 0.05, upper_limit=dataset_centre[0] + 0.05
+    )
+    centre_1 = af.UniformPrior(
+        lower_limit=dataset_centre[1] - 0.05, upper_limit=dataset_centre[1] + 0.05
+    )
 
     bulge_gaussian_list = []
 
@@ -314,12 +317,12 @@ def fit(
      - Positions: We update the positions and positions threshold using the previous model-fitting result (as described 
      in `chaining/examples/parametric_to_pixelization.py`) to remove unphysical solutions from the `Inversion` model-fitting.
     """
-    analysis = al.AnalysisImaging(
+    analysis = AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_lp_result),
-        positions_likelihood=source_lp_result.positions_likelihood_from(
+        positions_likelihood_list=[source_lp_result.positions_likelihood_from(
             factor=3.0, minimum_threshold=0.2
-        ),
+        )],
     )
 
     source_pix_result_1 = slam.source_pix.run_1(
@@ -350,7 +353,7 @@ def fit(
 
     Below, we therefore set up the adapt image using this result.
     """
-    analysis = al.AnalysisImaging(
+    analysis = AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_pix_result_1),
         settings_inversion=al.SettingsInversion(
@@ -379,7 +382,7 @@ def fit(
     lens mass model and source light model fixed to the maximum log likelihood result of the SOURCE LP PIPELINE.
     In this example it:
 
-     - Uses a multi Gaussian expansion with 2 sets of 20 Gaussians for the lens galaxy's light. [6 Free Parameters].
+     - Uses a multi Gaussian expansion with 2 sets of 30 Gaussians for the lens galaxy's light. [6 Free Parameters].
 
      - Uses an `Isothermal` mass model with `ExternalShear` for the lens's total mass distribution [fixed from SOURCE PIX PIPELINE].
 
@@ -387,7 +390,7 @@ def fit(
 
      - Carries the lens redshift and source redshift of the SOURCE PIPELINE through to the MASS PIPELINE [fixed values].   
     """
-    analysis = al.AnalysisImaging(
+    analysis = AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_pix_result_1),
     )
@@ -459,7 +462,7 @@ def fit(
      - Positions: We update the positions and positions threshold using the previous model-fitting result (as described 
      in `chaining/examples/parametric_to_pixelization.py`) to remove unphysical solutions from the `Inversion` model-fitting.
     """
-    analysis = al.AnalysisImaging(
+    analysis = AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_pix_result_1),
         positions_likelihood=source_pix_result_2.positions_likelihood_from(
@@ -474,90 +477,7 @@ def fit(
         source_result_for_source=source_pix_result_2,
         light_result=light_result,
         mass=af.Model(al.mp.Isothermal),
-        reset_shear_prior=True
-    )
-
-    """
-    __Output__
-
-    The SLaM pipeline above outputs the model-fitting results to the `output` folder of the workspace, which includes
-    the usual model results, visualization, and .json files.
-
-    As described in the `autolens_workspace/*/results` package there is an API for loading these results from hard disk
-    to Python, for example so they can be manipulated in a Juypter notebook.
-
-    However, it is also often useful to output the results to the dataset folder of each lens in standard formats, for
-    example images of the lens and lensed source in .fits or visualization outputs like .png files. This makes transferring
-    the results more portable, especially if they are to be used by other people.
-
-    The `slam_util` module provides convenience methods for outputting many results to the dataset folder, we
-    use it below to output the following results:
-
-     - Images of the model lens light, lensed source light and source reconstruction to .fits files.
-     - A text `model.results` file containing the lens model parameter estimates.
-     - A subplot containing the fit in one row, which is output to .png.
-     - A subplot of the source reconstruction in the source plane in one row, which is output to .png.
-     - Separate results for the MGE fit and pixelization fit are output to the dataset folder as .fits files.
-
-    """
-    header = al.util.array_2d.header_obj_from(
-        file_path=path.join(dataset_main_path, dataset_fits_name),
-        hdu=vis_index * 3 + 1,
-    )
-
-    zero_point = header["MAGZERO"]
-
-    slam.slam_util.update_result_json_file(
-        file_path=path.join(dataset_main_path, "result.json"),
-        result=mass_result,
-        waveband=dataset_waveband,
-        einstein_radius=True,
-        fluxes=True,
-        fluxes_with_errors=True,
-        magnitude=True,
-        zero_point=zero_point,
-    )
-
-    slam.slam_util.output_result_to_fits(
-        output_path=path.join(dataset_path, "result"),
-        result=source_lp_result,
-        model_lens_light=True,
-        model_source_light=True,
-        mge_source_reconstruction=True,
-        prefix="mge_",
-        tag=dataset_waveband,
-        remove_fits_first=True,
-    )
-
-    slam.slam_util.output_result_to_fits(
-        output_path=path.join(dataset_path, "result"),
-        result=mass_result,
-        model_lens_light=True,
-        model_source_light=True,
-        source_reconstruction=True,
-        source_reconstruction_noise_map=True,
-        remove_fits_first=True,
-        tag=dataset_waveband,
-    )
-
-    slam.slam_util.output_model_results(
-        output_path=path.join(dataset_path, "result"),
-        result=mass_result,
-        filename="sie_model_results.txt",
-    )
-
-    slam.slam_util.output_fit_multi_png(
-        output_path=path.join(dataset_path, "result"),
-        result_list=[mass_result],
-        filename="sie_fit_pix",
-        tag_prefix=f"{dataset_waveband}{dataset_name}"
-    )
-
-    slam.slam_util.output_source_multi_png(
-        output_path=path.join(dataset_path, "result"),
-        result_list=[mass_result],
-        filename="source_reconstruction",
-        tag_prefix=f"{dataset_waveband}{dataset_name}"
+        reset_shear_prior=True,
     )
 
     return source_lp_result, mass_result
@@ -565,11 +485,9 @@ def fit(
 
 def fit_waveband(
     dataset_name: str,
-    source_lp_result,
     mass_result,
     mask_radius: float = 3.0,
-    number_of_cores: int = 1,
-    iterations_per_update: int = 5000,
+    iterations_per_quick_update: int = 5000,
 ):
     """
     The function below fits the same lens system as above, but using lower resolution data from a different
@@ -581,49 +499,19 @@ def fit_waveband(
     This script is therefore a demonstration of how to fit multi-wavelength data using the SLaM pipelines.
     """
 
-    # %matplotlib inline
-    # from pyprojroot import here
-    # workspace_path = str(here())
-    # %cd $workspace_path
-    # print(f"Working Directory has been set to `{workspace_path}`")
-
     import json
     import numpy as np
     import os
     import sys
-    from os import path
+    from PIL import Image
+    from pathlib import Path
+
     import autofit as af
     import autolens as al
     import autolens.plot as aplt
 
     sys.path.insert(0, os.getcwd())
     import slam
-
-    """
-    __HPC Mode__
-
-    When running in parallel via Python `multiprocessing`, display issues with the `matplotlib` backend can arise
-    and cause the code to crash.
-
-    HPC mode sets the backend to mitigate this issue and is set to run throughout the entire pipeline below.
-
-    The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
-    output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
-    are output to hard-disk.
-
-    There are a number of environment variables which must be set to ensure parallelization is efficient, which
-    are set below in this script to ensure the pipeline always runs efficiently even if you have not manually set them.
-    """
-    from autoconf import conf
-
-    conf.instance["general"]["hpc"]["hpc_mode"] = True
-    conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
-
-    os.environ["OPENBLAS_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-    os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
     """
     __Configs__
@@ -634,16 +522,19 @@ def fit_waveband(
         "cb_unit"
     ] = r"$\,\,\mathrm{e^{-}}\,\mathrm{s^{-1}}$"
 
-    from euclid import slam
-
     """
     __Dataset__ 
 
     Load, plot and mask the `Imaging` data.
     """
-    dataset_waveband = "vis"
-    dataset_main_path = path.join("dataset", dataset_name)
-    dataset_path = path.join(dataset_main_path, dataset_waveband)
+    dataset_main_path = Path("dataset") / dataset_name
+
+    try:
+        with open(dataset_main_path / "info.json") as json_file:
+            info = json.load(json_file)
+            json_file.close()
+    except FileNotFoundError:
+        info = {}
 
     """
     __Dataset Wavebands__
@@ -662,7 +553,10 @@ def fit_waveband(
     The pixel scale of each waveband is assumed to be 0.1" as EXT data is sampler to the same resolution as VIS,
     if this is not true this will need to be updated.
     """
-    dataset_index_dict = {"vis" : 0, "nir_y" : 1, "nir_j" : 2, "nir_h" : 3}
+    dataset_index_dict = {"vis": 0, "nir_y": 1, "nir_j": 2, "nir_h": 3}
+
+    # This is EXT data I've been sen before in case its useful.
+
     # dataset_index_dict = {"meg_u" : 0, "hsc_g" : 1, "meg_r" : 2, "vis" : 3, "hsc_z" : 4, "nir_y" : 5, "nir_j" : 6, "nir_h" : 7}
 
     """
@@ -686,22 +580,11 @@ def fit_waveband(
         lower_limit=-0.2, upper_limit=0.2
     )
 
-    """
-    __Result Dict__
-
-    Visualization at the end of the pipeline will output all fits to all wavebands on a single matplotlib subplot.
-
-    The results of each fit are stored in a dictionary, which is used to pass the results of each fit to the
-    visualization functions.
-    """
-    multi_result_lp_dict = {"vis" : source_lp_result}
-    multi_result_pix_dict = {"vis": mass_result}
-
     for i in range(len(dataset_index_dict.keys())):
 
+        dataset_main_path = "dataset" / dataset_name
         dataset_waveband = list(dataset_index_dict.keys())[i]
-        dataset_main_path = path.join("dataset", dataset_name)
-        dataset_path = path.join(dataset_main_path, dataset_waveband)
+        dataset_path = dataset_main_path / dataset_waveband
         dataset_fits_name = f"{dataset_name}.fits"
 
         if dataset_waveband == "vis":
@@ -710,12 +593,12 @@ def fit_waveband(
         dataset_index = dataset_index_dict[dataset_waveband]
 
         dataset = al.Imaging.from_fits(
-            data_path=path.join(dataset_path, dataset_fits_name),
-            data_hdu=dataset_index*3+1,
-            noise_map_path=path.join(dataset_path, dataset_fits_name),
-            noise_map_hdu=dataset_index*3+3,
-            psf_path=path.join(dataset_path, dataset_fits_name),
-            psf_hdu=dataset_index*3+2,
+            data_path=dataset_path / dataset_fits_name,
+            data_hdu=dataset_index * 3 + 1,
+            noise_map_path=dataset_path / dataset_fits_name,
+            noise_map_hdu=dataset_index * 3 + 3,
+            psf_path=dataset_path / dataset_fits_name,
+            psf_hdu=dataset_index * 3 + 2,
             pixel_scales=0.1,
             check_noise_map=False,
         )
@@ -724,32 +607,31 @@ def fit_waveband(
             region=(-0.3, 0.3, -0.3, 0.3), box_size=2
         )
 
-        """
-        __Dataset Model__
+        try:
+            mask_extra_galaxies = al.Mask2D.from_fits(
+                file_path=dataset_main_path / "mask_extra_galaxies.fits",
+                pixel_scales=0.1,
+                invert=True,
+            )
 
-        For each fit, the (y,x) offset of the secondary data from the primary data is a free parameter. 
+            dataset = dataset.apply_noise_scaling(
+                mask=mask_extra_galaxies,
+            )
+        except FileNotFoundError:
+            pass
 
-        This is achieved by setting up a `DatasetModel` for each waveband, which extends the model with components
-        including the grid offset.
-
-        This ensures that if the datasets are offset with respect to one another, the model can correct for this,
-        with sub-pixel offsets often being important in lens modeling as the precision of a lens model can often be
-        less than the requirements on astrometry.
-        """
-        dataset_model = af.Model(al.DatasetModel)
-
-        dataset_model.grid_offset.grid_offset_0 = af.UniformPrior(
-            lower_limit=-0.2, upper_limit=0.2
-        )
-        dataset_model.grid_offset.grid_offset_1 = af.UniformPrior(
-            lower_limit=-0.2, upper_limit=0.2
-        )
+        if mask_radius is None:
+            mask_radius = info.get("mask_radius") or 3.0
+        mask_centre = info.get("mask_centre") or (0.0, 0.0)
 
         mask = al.Mask2D.circular(
             shape_native=dataset.shape_native,
             pixel_scales=dataset.pixel_scales,
             radius=mask_radius,
+            centre=mask_centre,
         )
+
+        dataset = dataset.apply_mask(mask=mask)
 
         over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
             grid=dataset.grid,
@@ -767,12 +649,163 @@ def fit_waveband(
         __Settings AutoFit__
         """
         settings_search = af.SettingsSearch(
-            path_prefix=path.join("euclid_multi_wavelength", dataset_name),
+            path_prefix=Path("lens") / dataset_name,
             unique_tag=dataset_waveband,
-            info=None,
-            number_of_cores=number_of_cores,
+            info=None
             session=None,
         )
+
+        """
+        __Custom Visualizer & Analysis__
+        """
+
+        class VisualizerImaging(af.Visualizer):
+            """
+            __RGB Visualizer__
+
+            In built into **PyAutoLens** are `Visualizer` objects that output images of the dataset, fit, tracer and other
+            quantities to hard-disk.
+
+            These images for in the `image` folder of th modeling results. They are used for quick inspection of the fit and
+            by the workflow functionality to produce new images of the results quickly.
+
+            However, the source code visualizers cannot access quantities that are outside the inputs of the source-code,
+            such as the RGB images of the dataset.
+
+            The API below shows how a custom visualizer can be created that can access these quantities, output them to
+            hard-disk in the modeling folder results and in the workflow examples are used to produce new images of the results.
+            """
+
+            @staticmethod
+            def visualize_before_fit(
+                    analysis,
+                    paths: af.AbstractPaths,
+                    model: af.AbstractPriorModel,
+            ):
+                """
+                PyAutoFit calls this function immediately before the non-linear search begins.
+
+                It visualizes objects which do not change throughout the model fit like the dataset.
+
+                Parameters
+                ----------
+                paths
+                    The paths object which manages all paths, e.g. where the non-linear search outputs are stored,
+                    visualization and the pickled objects used by the aggregator output by this function.
+                model
+                    The model object, which includes model components representing the galaxies that are fitted to
+                    the imaging data.
+                """
+                visualizer = al.VisualizerImaging()
+
+                visualizer.visualize_before_fit(
+                    analysis=analysis,
+                    paths=paths,
+                    model=model,
+                )
+
+                # Load the images
+                img0 = np.array(Image.open(dataset_main_path / "rgb_0.png"))
+                img1 = np.array(Image.open(dataset_main_path / "rgb_1.png"))
+
+                mask = al.Mask2D.all_false(
+                    shape_native=(img0.shape[0], img0.shape[1]),
+                    pixel_scales=dataset.pixel_scales,
+                    origin=dataset.mask.origin,
+                )
+
+                img0 = al.Array2DRGB(values=img0, mask=mask)
+                img1 = al.Array2DRGB(values=img1, mask=mask)
+
+                img0_masked = al.Array2DRGB(values=img0, mask=dataset.mask)
+                img1_masked = al.Array2DRGB(values=img1, mask=dataset.mask)
+
+                mat_plot_2d = aplt.MatPlot2D(
+                    output=aplt.Output(
+                        path=paths.image_path, filename="subplot_rgb", format="png"
+                    ),
+                )
+
+                plotter_0 = aplt.Array2DPlotter(array=img0, mat_plot_2d=mat_plot_2d)
+                plotter_1 = aplt.Array2DPlotter(array=img1, mat_plot_2d=mat_plot_2d)
+                plotter_0_masked = aplt.Array2DPlotter(
+                    array=img0_masked, mat_plot_2d=mat_plot_2d
+                )
+                plotter_1_masked = aplt.Array2DPlotter(
+                    array=img1_masked, mat_plot_2d=mat_plot_2d
+                )
+
+                plotter_0.mat_plot_2d = plotter_1.mat_plot_2d
+
+                plotter_0.open_subplot_figure(
+                    number_subplots=4,
+                    subplot_shape=(2, 2),
+                )
+
+                plotter_0.figure_2d()
+                plotter_1.figure_2d()
+                plotter_0_masked.figure_2d()
+                plotter_1_masked.figure_2d()
+
+                plotter_0.mat_plot_2d.output.subplot_to_figure(auto_filename="subplot_rgb")
+                plotter_0.close_subplot_figure()
+
+        class AnalysisImaging(al.AnalysisImaging):
+            """
+            Sets the custom RGB visualizer above ensuring the RGB subplot is output.
+            """
+
+            Visualizer = VisualizerImaging
+
+            def compute_latent_variables(self, parameters, model):
+                """
+                A latent variable is not a model parameter but can be derived from the model. Its value and errors may be
+                of interest and aid in the interpretation of a model-fit.
+
+                This code implements a simple example of a latent variable, the magn
+
+                By overwriting this method we can manually specify latent variables that are calculated and output to
+                a `latent.csv` file, which mirrors the `samples.csv` file.
+
+                In the example below, the `latent.csv` file will contain at least two columns with the shear magnitude and
+                angle sampled by the non-linear search.
+
+                You can add your own custom latent variables here, if you have particular quantities that you
+                would like to output to the `latent.csv` file.
+
+                This function is called at the end of search, following one of two schemes depending on the settings in
+                `output.yaml`:
+
+                1) Call for every search sample, which produces a complete `latent/samples.csv` which mirrors the normal
+                `samples.csv` file but takes a long time to compute.
+
+                2) Call only for N random draws from the posterior inferred at the end of the search, which only produces a
+                `latent/latent_summary.json` file with the median and 1 and 3 sigma errors of the latent variables but is
+                fast to compute.
+
+                Parameters
+                ----------
+                parameters : array-like
+                    The parameter vector of the model sample. This will typically come from the non-linear search.
+                    Inside this method it is mapped back to a model instance via `model.instance_from_vector`.
+                model : Model
+                    The model object defining how the parameter vector is mapped to an instance. Passed explicitly
+                    so that this function can be used inside JAX transforms (`vmap`, `jit`) with `functools.partial`.
+
+                Returns
+                -------
+                A dictionary mapping every latent variable name to its value.
+
+                """
+                instance = model.instance_from_vector(vector=parameters)
+
+                if hasattr(instance.galaxies.lens, "shear"):
+                    magnitude, angle = al.convert.shear_magnitude_and_angle_from(
+                        gamma_1=instance.galaxies.lens.shear.gamma_1,
+                        gamma_2=instance.galaxies.lens.shear.gamma_2,
+                    )
+
+                return (magnitude, angle)
 
         """
         __SOURCE LP PIPELINE (with lens light)__
@@ -789,7 +822,7 @@ def fit_waveband(
 
          - Mass Centre: Fix the mass profile centre to (0.0, 0.0) (this assumption will be relaxed in the MASS TOTAL PIPELINE).
         """
-        analysis = al.AnalysisImaging(
+        analysis = AnalysisImaging(
             dataset=dataset,
         )
 
@@ -821,6 +854,27 @@ def fit_waveband(
             profile_list=bulge_gaussian_list,
         )
 
+        """
+        __Dataset Model__
+
+        For each fit, the (y,x) offset of the secondary data from the primary data is a free parameter. 
+
+        This is achieved by setting up a `DatasetModel` for each waveband, which extends the model with components
+        including the grid offset.
+
+        This ensures that if the datasets are offset with respect to one another, the model can correct for this,
+        with sub-pixel offsets often being important in lens modeling as the precision of a lens model can often be
+        less than the requirements on astrometry.
+        """
+        dataset_model = af.Model(al.DatasetModel)
+
+        dataset_model.grid_offset.grid_offset_0 = af.UniformPrior(
+            lower_limit=-0.2, upper_limit=0.2
+        )
+        dataset_model.grid_offset.grid_offset_1 = af.UniformPrior(
+            lower_limit=-0.2, upper_limit=0.2
+        )
+
         source_lp_result = slam.source_lp.run(
             settings_search=settings_search,
             analysis=analysis,
@@ -835,18 +889,6 @@ def fit_waveband(
             dataset_model=dataset_model,
         )
 
-        multi_result_lp_dict[dataset_waveband] = source_lp_result
-
-        slam.slam_util.output_result_to_fits(
-            output_path=path.join(dataset_path, "result"),
-            result=source_lp_result,
-            model_lens_light=True,
-            model_source_light=True,
-            mge_source_reconstruction=True,
-            tag=dataset_waveband,
-            prefix="mge_",
-        )
-
         """
         __SOURCE PIX PIPELINE (with lens light)__
 
@@ -859,7 +901,7 @@ def fit_waveband(
          - Carries the lens redshift, source redshift and `ExternalShear` of the SOURCE LP PIPELINE through to the
          SOURCE PIX PIPELINE.
         """
-        analysis = al.AnalysisImaging(
+        analysis = AnalysisImaging(
             dataset=dataset,
             adapt_image_maker=al.AdaptImageMaker(result=source_lp_result),
             raise_inversion_positions_likelihood_exception=False,
@@ -886,7 +928,7 @@ def fit_waveband(
             cls=al.AbstractMapper
         )[0].extent_from()
 
-        analysis = al.AnalysisImaging(
+        analysis = AnalysisImaging(
             dataset=dataset,
             adapt_image_maker=al.AdaptImageMaker(result=source_pix_result_1),
             settings_inversion=al.SettingsInversion(
@@ -916,67 +958,6 @@ def fit_waveband(
             dataset_model=dataset_model,
         )
 
-        multi_result_pix_dict[dataset_waveband] = multi_result
-
-        slam.slam_util.output_result_to_fits(
-            output_path=path.join(dataset_path, "result"),
-            result=multi_result,
-            model_lens_light=True,
-            model_source_light=True,
-            source_reconstruction=True,
-            source_reconstruction_noise_map=True,
-            tag=dataset_waveband,
-        )
-
-        header = al.util.array_2d.header_obj_from(
-            file_path=path.join(dataset_main_path, dataset_fits_name),
-            hdu=dataset_index*3+1,
-        )
-
-        zero_point = header["MAGZERO"]
-
-        slam.slam_util.update_result_json_file(
-            file_path=path.join(dataset_main_path, "result.json"),
-            result=multi_result,
-            waveband=dataset_waveband,
-            fluxes=True,
-            fluxes_with_errors=True,
-            magnitude=True,
-            zero_point=zero_point,
-        )
-
-
-
-    tag_list = list(multi_result_pix_dict.keys())
-
-    slam.slam_util.output_fit_multi_png(
-        output_path=path.join(dataset_path, "result"),
-        result_list=[
-            multi_result_lp_dict[dataset_waveband] for dataset_waveband in tag_list
-        ],
-        tag_list=[tag + dataset_name for tag in tag_list],
-        filename="sie_fit_mge",
-    )
-
-    slam.slam_util.output_fit_multi_png(
-        output_path=path.join(dataset_path, "result"),
-        result_list=[
-            multi_result_pix_dict[dataset_waveband] for dataset_waveband in tag_list
-        ],
-        tag_list=[tag + dataset_name for tag in tag_list],
-        filename="sie_fit_pix",
-    )
-
-    slam.slam_util.output_source_multi_png(
-        output_path=path.join(dataset_path, "result"),
-        result_list=[
-            multi_result_pix_dict[dataset_waveband] for dataset_waveband in tag_list
-        ],
-        tag_list=[tag + dataset_name for tag in tag_list],
-        filename="source_reconstruction",
-    )
-
-
 
 if __name__ == "__main__":
     import argparse
@@ -991,23 +972,15 @@ if __name__ == "__main__":
         metavar="float",
         required=False,
         help="The Circular Radius of the Mask",
-        default=None
+        default=None,
     )
 
     parser.add_argument(
-        "--number_of_cores",
-        metavar="int",
-        required=False,
-        help="The number of cores to parallelize the fit",
-        default=1
-    )
-
-    parser.add_argument(
-        "--iterations_per_update",
+        "--iterations_per_quick_update",
         metavar="int",
         required=False,
         help="The number of iterations between each update",
-        default=5000
+        default=5000,
     )
 
     args = parser.parse_args()
@@ -1021,22 +994,21 @@ if __name__ == "__main__":
     or uses the default value of 3.0" if this is not available.
     """
     mask_radius = float(args.mask_radius) if args.mask_radius is not None else None
-    number_of_cores = int(args.number_of_cores) if args.number_of_cores is not None else 1
-    iterations_per_update = int(args.iterations_per_update) if args.iterations_per_update is not None else 5000
-
+    iterations_per_quick_update = (
+        int(args.iterations_per_quick_update)
+        if args.iterations_per_quick_update is not None
+        else 5000
+    )
 
     source_lp_result, mass_result = fit(
         dataset_name=args.dataset,
         mask_radius=mask_radius,
-        number_of_cores=number_of_cores,
-        iterations_per_update=iterations_per_update,
+        iterations_per_quick_update=iterations_per_quick_update,
     )
 
     fit_waveband(
-        source_lp_result=source_lp_result,
         mass_result=mass_result,
         dataset_name=args.dataset,
         mask_radius=mask_radius,
-        number_of_cores=number_of_cores,
-        iterations_per_update=iterations_per_update,
+        iterations_per_quick_update=iterations_per_quick_update,
     )

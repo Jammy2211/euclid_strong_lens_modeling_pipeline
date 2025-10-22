@@ -13,18 +13,24 @@ https://github.com/Jammy2211/euclid_strong_lens_modeling_pipeline
 The pipeline can be run as a "black box", whereby you pass it the dataset you want it to fit and it automatically
 fits it without understanding how the pipeline works.
 
-The pipeline automatically outputs results and visualization to hard-disk, which if you are running it as a black
-box is likely all you will look at. These include deblended lens and source images, a source-plane reconstruction and
-lens model quantities like the Einstein Radius.
+The pipeline automatically outputs results and visualization to hard-disk in the `output` folder, which if you are
+running it as a black box is likely all you will look at. This includes a summary of the fit, the lens model,
+parameter inferences and errors, and much more. For small lens samples, manually navigating the results in the `output`
+folder is sufficient to do science.
 
-Please contact James Nightingale on the Euclid Consortium Slack with any questions or if you would like other
+For large samples this becomes slow and cumbersome. The folder `workflow` contains example scripts that show how to
+use database functionality to load, query, and output .csv, .png and .fits files summarzing fits to large samples of
+lenses. This includes .fits images of the deblendeded lens and source images, source-plane source econstructions and
+a .csv file containing lens model quantities like the Einstein Radius.
+
+Please contact James Nightingale on the Euclid Consortium SLACK with any questions or if you would like other
 information on the pipeline.
 
 __Black Box Description__
 
-The text below is taken from the **PyAutoLens** documentation and describes the pipeline in more detail. 
+The text below is taken from the **PyAutoLens** documentation and describes the pipeline in more detail.
 
-You do not need to understand the text in sections like "Prequisites", "Pipeline Structure", "Design Choices", etc in 
+You do not need to understand the text in sections like "Prequisites", "Pipeline Structure", "Design Choices", etc in
 order to run the pipeline as a black box, the text is simply there to provide additional information if you
 are interested in how the pipeline works.
 
@@ -140,18 +146,18 @@ If any code in this script is unclear, refer to the `chaining/start_here.ipynb` 
 def fit(
     dataset_name: str,
     mask_radius: float = 3.0,
-    number_of_cores: int = 1,
-    iterations_per_update: int = 5000,
+    iterations_per_quick_update: int = 5000,
 ):
+
+    import util
+    import os
+    from pathlib import Path
     import json
     import numpy as np
-    import os
     import sys
-    from os import path
 
     import autofit as af
     import autolens as al
-    import autolens.plot as aplt
 
     sys.path.insert(0, os.getcwd())
     import slam
@@ -175,18 +181,23 @@ def fit(
     MER cutouts including EXT data may not conform to this convention, however, so always be sure to check the
     .fits files of the dataset you're using to make sure the vis_index is correct!
     """
-    dataset_main_path = path.join("dataset", dataset_name)
-    dataset_path = path.join(dataset_main_path)
+    dataset_main_path = Path("dataset") / dataset_name
     dataset_fits_name = f"{dataset_name}.fits"
 
-    vis_index = 0
+    dataset_index_dict = util.dataset_instrument_hdu_dict_via_fits_from(
+        dataset_path=dataset_main_path, dataset_fits_name=dataset_fits_name
+    )
+
+    dataset_waveband = "vis"
+
+    vis_index = dataset_index_dict[dataset_waveband]
 
     dataset = al.Imaging.from_fits(
-        data_path=path.join(dataset_main_path, dataset_fits_name),
+        data_path=dataset_main_path / dataset_fits_name,
         data_hdu=vis_index * 3 + 1,
-        noise_map_path=path.join(dataset_main_path, dataset_fits_name),
+        noise_map_path=dataset_main_path / dataset_fits_name,
         noise_map_hdu=vis_index * 3 + 3,
-        psf_path=path.join(dataset_main_path, dataset_fits_name),
+        psf_path=dataset_main_path / dataset_fits_name,
         psf_hdu=vis_index * 3 + 2,
         pixel_scales=0.1,
         check_noise_map=False,
@@ -197,19 +208,32 @@ def fit(
     )
 
     try:
-        with open(path.join(dataset_main_path, "info.json")) as json_file:
+        with open(dataset_main_path / "info.json") as json_file:
             info = json.load(json_file)
             json_file.close()
     except FileNotFoundError:
         info = {}
 
+    try:
+        mask_extra_galaxies = al.Mask2D.from_fits(
+            file_path=dataset_main_path / "mask_extra_galaxies.fits",
+            pixel_scales=0.1,
+            invert=True,
+        )
+
+        dataset = dataset.apply_noise_scaling(mask=mask_extra_galaxies)
+    except FileNotFoundError:
+        pass
+
     if mask_radius is None:
         mask_radius = info.get("mask_radius") or 3.0
+    mask_centre = info.get("mask_centre") or (0.0, 0.0)
 
     mask = al.Mask2D.circular(
         shape_native=dataset.shape_native,
         pixel_scales=dataset.pixel_scales,
         radius=mask_radius,
+        centre=mask_centre,
     )
 
     dataset = dataset.apply_mask(mask=mask)
@@ -223,8 +247,16 @@ def fit(
 
     dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
-    dataset_plotter = aplt.ImagingPlotter(dataset=dataset)
-    dataset_plotter.subplot_dataset()
+    """
+    __Positions__
+    """
+    try:
+        positions = al.Grid2DIrregular(
+            values=al.from_json(file_path=dataset_main_path / "positions.json")
+        )
+        positions_likelihood_list = [al.PositionsLH(threshold=0.1, positions=positions)]
+    except FileNotFoundError:
+        positions_likelihood_list = None
 
     """
     __Settings AutoFit__
@@ -234,10 +266,9 @@ def fit(
     dataset_waveband = "vis"
 
     settings_search = af.SettingsSearch(
-        path_prefix=path.join("euclid_pipeline", dataset_name),
+        path_prefix=Path("slam") / dataset_name,
         unique_tag=dataset_waveband,
         info=None,
-        number_of_cores=number_of_cores,
         session=None,
     )
 
@@ -247,36 +278,10 @@ def fit(
     The redshifts of the lens and source galaxies.
     
     These are placeholders for now given we probably don't know the redshifts of the lens and source galaxies,
-    but amnually input via command line can be added.
+    but manually input via command line can be added.
     """
     redshift_lens = 0.5
     redshift_source = 1.0
-
-    """
-    __HPC Mode__
-    
-    When running in parallel via Python `multiprocessing`, display issues with the `matplotlib` backend can arise
-    and cause the code to crash.
-    
-    HPC mode sets the backend to mitigate this issue and is set to run throughout the entire pipeline below.
-    
-    The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
-    output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
-    are output to hard-disk.
-    
-    There are a number of environment variables which must be set to ensure parallelization is efficient, which
-    are set below in this script to ensure the pipeline always runs efficiently even if you have not manually set them.
-    """
-    from autoconf import conf
-
-    conf.instance["general"]["hpc"]["hpc_mode"] = True
-    conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
-
-    os.environ["OPENBLAS_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-    os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
     """
     __SOURCE LP PIPELINE__
@@ -284,7 +289,7 @@ def fit(
     The SOURCE LP PIPELINE uses one search to initialize a robust model for the source galaxy's light, which in 
     this example:
     
-     - Uses a multi Gaussian expansion with 2 sets of 20 Gaussians for the lens galaxy's light.
+     - Uses a multi Gaussian expansion with 2 sets of 30 Gaussians for the lens galaxy's light.
     
      - Uses an `Isothermal` model for the lens's total mass distribution with an `ExternalShear`.
     
@@ -294,70 +299,34 @@ def fit(
     
      - Mass Centre: Fix the mass profile centre to (0.0, 0.0) (this assumption will be relaxed in the MASS TOTAL PIPELINE).
     """
-    analysis = al.AnalysisImaging(dataset=dataset)
+    analysis = util.AnalysisImaging(
+        dataset=dataset,
+        positions_likelihood_list=positions_likelihood_list,
+        dataset_main_path=dataset_main_path,
+    )
 
     # Lens Light
 
-    total_gaussians = 30
-    gaussian_per_basis = 2
-
-    log10_sigma_list = np.linspace(-3, np.log10(mask_radius), total_gaussians)
-
-    centre_0 = af.UniformPrior(lower_limit=dataset_centre[0]-0.05, upper_limit=dataset_centre[0]+0.05)
-    centre_1 = af.UniformPrior(lower_limit=dataset_centre[1]-0.05, upper_limit=dataset_centre[1]+0.05)
-
-    bulge_gaussian_list = []
-
-    for j in range(gaussian_per_basis):
-        ell_comps_0 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
-        ell_comps_1 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
-
-        gaussian_list = af.Collection(
-            af.Model(al.lp_linear.Gaussian) for _ in range(total_gaussians)
-        )
-
-        for i, gaussian in enumerate(gaussian_list):
-            gaussian.centre.centre_0 = centre_0
-            gaussian.centre.centre_1 = centre_1
-            gaussian.ell_comps.ell_comps_0 = ell_comps_0
-            gaussian.ell_comps.ell_comps_1 = ell_comps_1
-            gaussian.sigma = 10 ** log10_sigma_list[i]
-
-        bulge_gaussian_list += gaussian_list
-
-    lens_bulge = af.Model(
-        al.lp_basis.Basis,
-        profile_list=bulge_gaussian_list,
+    lens_bulge = al.model_util.mge_model_from(
+        mask_radius=mask_radius,
+        total_gaussians=20,
+        centre_prior_is_uniform=True,
+        centre=dataset_centre,
     )
 
-    # Source Light
+    mass = af.Model(al.mp.Isothermal)
 
-    centre_0 = af.GaussianPrior(mean=0.0, sigma=0.3)
-    centre_1 = af.GaussianPrior(mean=0.0, sigma=0.3)
+    mass.centre.centre_0 =  af.UniformPrior(
+        lower_limit=dataset_centre[0] - 0.05, upper_limit=dataset_centre[0] + 0.05
+    )
+    mass.centre.centre_1 =  af.UniformPrior(
+        lower_limit=dataset_centre[1] - 0.05, upper_limit=dataset_centre[1] + 0.05
+    )
 
-    total_gaussians = 20
-    gaussian_per_basis = 1
+    # Source:
 
-    log10_sigma_list = np.linspace(-3, np.log10(1.0), total_gaussians)
-
-    bulge_gaussian_list = []
-
-    for j in range(gaussian_per_basis):
-        gaussian_list = af.Collection(
-            af.Model(al.lp_linear.Gaussian) for _ in range(total_gaussians)
-        )
-
-        for i, gaussian in enumerate(gaussian_list):
-            gaussian.centre.centre_0 = centre_0
-            gaussian.centre.centre_1 = centre_1
-            gaussian.ell_comps = gaussian_list[0].ell_comps
-            gaussian.sigma = 10 ** log10_sigma_list[i]
-
-        bulge_gaussian_list += gaussian_list
-
-    source_bulge = af.Model(
-        al.lp_basis.Basis,
-        profile_list=bulge_gaussian_list,
+    source_bulge = al.model_util.mge_model_from(
+        mask_radius=mask_radius, total_gaussians=20, centre_prior_is_uniform=False
     )
 
     source_lp_result = slam.source_lp.run(
@@ -365,12 +334,48 @@ def fit(
         analysis=analysis,
         lens_bulge=lens_bulge,
         lens_disk=None,
-        mass=af.Model(al.mp.Isothermal),
+        mass=mass,
         shear=af.Model(al.mp.ExternalShear),
         source_bulge=source_bulge,
         mass_centre=dataset_centre,
         redshift_lens=redshift_lens,
         redshift_source=redshift_source,
+    )
+
+    """
+    __JAX & Preloads__
+
+    In JAX, calculations must use static shaped arrays with known and fixed indexes. For certain calculations in the
+    pixelization, this information has to be passed in before the pixelization is performed. Below, we do this for 3
+    inputs:
+
+    - `total_linear_light_profiles`: The number of linear light profiles in the model. This is 0 because we are not
+      fitting any linear light profiles to the data, primarily because the lens light is omitted.
+
+    - `total_mapper_pixels`: The number of source pixels in the rectangular pixelization mesh. This is required to set up 
+      the arrays that perform the linear algebra of the pixelization.
+
+    - `source_pixel_zeroed_indices`: The indices of source pixels on its edge, which when the source is reconstructed 
+      are forced to values of zero, a technique tests have shown are required to give accruate lens models.
+
+    The `image_mesh` can be ignored, it is legacy API from previous versions which may or may not be reintegrated in future
+    versions.
+    """
+    image_mesh = None
+    mesh_shape = (20, 20)
+    total_mapper_pixels = mesh_shape[0] * mesh_shape[1]
+
+    total_linear_light_profiles = 20
+
+    preloads = al.Preloads(
+        mapper_indices=al.mapper_indices_from(
+            total_linear_light_profiles=total_linear_light_profiles,
+            total_mapper_pixels=total_mapper_pixels
+        ),
+        source_pixel_zeroed_indices=al.util.mesh.rectangular_edge_pixel_list_from(
+            total_linear_light_profiles=total_linear_light_profiles,
+            shape_native=mesh_shape,
+        ),
     )
 
     """
@@ -400,20 +405,25 @@ def fit(
      - Positions: We update the positions and positions threshold using the previous model-fitting result (as described 
      in `chaining/examples/parametric_to_pixelization.py`) to remove unphysical solutions from the `Inversion` model-fitting.
     """
-    analysis = al.AnalysisImaging(
+    analysis = util.AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_lp_result),
-        positions_likelihood=source_lp_result.positions_likelihood_from(
-            factor=3.0, minimum_threshold=0.2
-        ),
+        positions_likelihood_list=[
+            source_lp_result.positions_likelihood_from(
+                factor=3.0, minimum_threshold=0.2
+            )
+        ],
+        preloads=preloads,
+        dataset_main_path=dataset_main_path,
     )
 
     source_pix_result_1 = slam.source_pix.run_1(
         settings_search=settings_search,
         analysis=analysis,
         source_lp_result=source_lp_result,
-        mesh_init=al.mesh.Delaunay,
-        image_mesh_init_shape=(30, 30),
+        mesh_init=af.Model(al.mesh.Rectangular, shape=mesh_shape),
+        regularization_init=af.Model(al.reg.Constant),
+        image_mesh_init=image_mesh,
     )
 
     """
@@ -436,15 +446,11 @@ def fit(
     
     Below, we therefore set up the adapt image using this result.
     """
-    analysis = al.AnalysisImaging(
+    analysis = util.AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_pix_result_1),
-        settings_inversion=al.SettingsInversion(
-            image_mesh_min_mesh_pixels_per_pixel=3,
-            image_mesh_min_mesh_number=5,
-            image_mesh_adapt_background_percent_threshold=0.1,
-            image_mesh_adapt_background_percent_check=0.8,
-        ),
+        preloads=preloads,
+        dataset_main_path=dataset_main_path,
     )
 
     source_pix_result_2 = slam.source_pix.run_2(
@@ -452,10 +458,9 @@ def fit(
         analysis=analysis,
         source_lp_result=source_lp_result,
         source_pix_result_1=source_pix_result_1,
-        image_mesh=al.image_mesh.Hilbert,
-        mesh=al.mesh.Delaunay,
-        regularization=al.reg.AdaptiveBrightnessSplit,
-        image_mesh_pixels_fixed=500,
+        image_mesh=image_mesh,
+        mesh=af.Model(al.mesh.Rectangular, shape=mesh_shape),
+        regularization=af.Model(al.reg.Constant),
     )
 
     """
@@ -465,7 +470,7 @@ def fit(
     lens mass model and source light model fixed to the maximum log likelihood result of the SOURCE LP PIPELINE.
     In this example it:
     
-     - Uses a multi Gaussian expansion with 2 sets of 20 Gaussians for the lens galaxy's light. [6 Free Parameters].
+     - Uses a multi Gaussian expansion with 2 sets of 30 Gaussians for the lens galaxy's light. [6 Free Parameters].
     
      - Uses an `Isothermal` mass model with `ExternalShear` for the lens's total mass distribution [fixed from SOURCE PIX PIPELINE].
     
@@ -473,41 +478,18 @@ def fit(
     
      - Carries the lens redshift and source redshift of the SOURCE PIPELINE through to the MASS PIPELINE [fixed values].   
     """
-    analysis = al.AnalysisImaging(
+    analysis = util.AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_pix_result_1),
+        preloads=preloads,
+        dataset_main_path=dataset_main_path,
     )
 
-    centre_0 = af.GaussianPrior(mean=dataset_centre[0], sigma=0.1)
-    centre_1 = af.GaussianPrior(mean=dataset_centre[1], sigma=0.1)
-
-    total_gaussians = 30
-    gaussian_per_basis = 2
-
-    log10_sigma_list = np.linspace(-2, np.log10(mask_radius), total_gaussians)
-
-    bulge_gaussian_list = []
-
-    for j in range(gaussian_per_basis):
-        ell_comps_0 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
-        ell_comps_1 = af.UniformPrior(lower_limit=-0.7, upper_limit=0.7)
-
-        gaussian_list = af.Collection(
-            af.Model(al.lp_linear.Gaussian) for _ in range(total_gaussians)
-        )
-
-        for i, gaussian in enumerate(gaussian_list):
-            gaussian.centre.centre_0 = centre_0
-            gaussian.centre.centre_1 = centre_1
-            gaussian.ell_comps.ell_comps_0 = ell_comps_0
-            gaussian.ell_comps.ell_comps_1 = ell_comps_1
-            gaussian.sigma = 10 ** log10_sigma_list[i]
-
-        bulge_gaussian_list += gaussian_list
-
-    lens_bulge = af.Model(
-        al.lp_basis.Basis,
-        profile_list=bulge_gaussian_list,
+    lens_bulge = al.model_util.mge_model_from(
+        mask_radius=mask_radius,
+        total_gaussians=20,
+        centre_prior_is_uniform=True,
+        centre=dataset_centre,
     )
 
     light_result = slam.light_lp.run(
@@ -545,12 +527,14 @@ def fit(
      - Positions: We update the positions and positions threshold using the previous model-fitting result (as described 
      in `chaining/examples/parametric_to_pixelization.py`) to remove unphysical solutions from the `Inversion` model-fitting.
     """
-    analysis = al.AnalysisImaging(
+    analysis = util.AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_pix_result_1),
         positions_likelihood=source_pix_result_2.positions_likelihood_from(
             factor=3.0, minimum_threshold=0.2
         ),
+        preloads=preloads,
+        dataset_main_path=dataset_main_path,
     )
 
     mass_result = slam.mass_total.run(
@@ -560,93 +544,14 @@ def fit(
         source_result_for_source=source_pix_result_2,
         light_result=light_result,
         mass=af.Model(al.mp.Isothermal),
-        reset_shear_prior=True
+        reset_shear_prior=True,
     )
 
-    """
-    __Output__
-    
-    The SLaM pipeline above outputs the model-fitting results to the `output` folder of the workspace, which includes
-    the usual model results, visualization, and .json files.
-    
-    As described in the `autolens_workspace/*/results` package there is an API for loading these results from hard disk
-    to Python, for example so they can be manipulated in a Juypter notebook.
-    
-    However, it is also often useful to output the results to the dataset folder of each lens in standard formats, for
-    example images of the lens and lensed source in .fits or visualization outputs like .png files. This makes transferring
-    the results more portable, especially if they are to be used by other people.
-    
-    The `slam_util` module provides convenience methods for outputting many results to the dataset folder, we
-    use it below to output the following results:
-    
-     - Images of the model lens light, lensed source light and source reconstruction to .fits files.
-     - A text `model.results` file containing the lens model parameter estimates.
-     - A subplot containing the fit in one row, which is output to .png.
-     - A subplot of the source reconstruction in the source plane in one row, which is output to .png.
-     - Separate results for the MGE fit and pixelization fit are output to the dataset folder as .fits files.
-    
-    """
-    header = al.util.array_2d.header_obj_from(
-        file_path=path.join(dataset_main_path, dataset_fits_name),
-        hdu=vis_index * 3 + 1,
-    )
+    return source_lp_result, mass_result
 
-    zero_point = header["MAGZERO"]
-
-    slam.slam_util.update_result_json_file(
-        file_path=path.join(dataset_main_path, "result.json"),
-        result=mass_result,
-        waveband=dataset_waveband,
-        einstein_radius=True,
-        fluxes=True,
-        fluxes_with_errors=True,
-        magnitude=True,
-        zero_point=zero_point,
-    )
-
-    slam.slam_util.output_result_to_fits(
-        output_path=path.join(dataset_path, "result"),
-        result=source_lp_result,
-        model_lens_light=True,
-        model_source_light=True,
-        mge_source_reconstruction=True,
-        prefix="mge_",
-        tag=dataset_waveband,
-        remove_fits_first=True,
-    )
-
-    slam.slam_util.output_result_to_fits(
-        output_path=path.join(dataset_path, "result"),
-        result=mass_result,
-        model_lens_light=True,
-        model_source_light=True,
-        source_reconstruction=True,
-        source_reconstruction_noise_map=True,
-        remove_fits_first=True,
-        tag=dataset_waveband,
-    )
-
-    slam.slam_util.output_model_results(
-        output_path=path.join(dataset_path, "result"),
-        result=mass_result,
-        filename="sie_model_results.txt",
-    )
-
-    slam.slam_util.output_fit_multi_png(
-        output_path=path.join(dataset_path, "result"),
-        result_list=[mass_result],
-        filename="sie_fit_pix",
-        tag_prefix=f"{dataset_waveband}{dataset_name}"
-    )
-
-    slam.slam_util.output_source_multi_png(
-        output_path=path.join(dataset_path, "result"),
-        result_list=[mass_result],
-        filename="source_reconstruction",
-        tag_prefix=f"{dataset_waveband}{dataset_name}"
-    )
 
 if __name__ == "__main__":
+
     import argparse
 
     parser = argparse.ArgumentParser(description="Lens Model Inputs")
@@ -659,23 +564,15 @@ if __name__ == "__main__":
         metavar="float",
         required=False,
         help="The Circular Radius of the Mask",
-        default=None
+        default=None,
     )
 
     parser.add_argument(
-        "--number_of_cores",
-        metavar="int",
-        required=False,
-        help="The number of cores to parallelize the fit",
-        default=1
-    )
-
-    parser.add_argument(
-        "--iterations_per_update",
+        "--iterations_per_quick_update",
         metavar="int",
         required=False,
         help="The number of iterations between each update",
-        default=5000
+        default=5000,
     )
 
     args = parser.parse_args()
@@ -689,12 +586,14 @@ if __name__ == "__main__":
     or uses the default value of 3.0" if this is not available.
     """
     mask_radius = float(args.mask_radius) if args.mask_radius is not None else None
-    number_of_cores = int(args.number_of_cores) if args.number_of_cores is not None else 1
-    iterations_per_update = int(args.iterations_per_update) if args.iterations_per_update is not None else 5000
+    iterations_per_quick_update = (
+        int(args.iterations_per_quick_update)
+        if args.iterations_per_quick_update is not None
+        else 5000
+    )
 
-    fit(
+    source_lp_result, mass_result = fit(
         dataset_name=args.dataset,
         mask_radius=mask_radius,
-        number_of_cores=number_of_cores,
-        iterations_per_update=iterations_per_update,
+        iterations_per_quick_update=iterations_per_quick_update,
     )

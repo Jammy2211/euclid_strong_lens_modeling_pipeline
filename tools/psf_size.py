@@ -10,6 +10,7 @@ analysis of the lens and source galaxies.
 
 This GUI is adapted from the following code: https://gist.github.com/brikeats/4f63f867fd8ea0f196c78e9b835150ab
 """
+
 # %matplotlib inline
 # from pyprojroot import here
 # workspace_path = str(here())
@@ -30,7 +31,7 @@ Setup the path the datasets we'll use to illustrate preprocessing, which is the
 folder `dataset/imaging/no_lens_light/mass_sie__source_sersic`.
 """
 
-dataset_name = "example"
+dataset_name = "102019586_NEG564463213499964061"
 dataset_path = path.join("dataset", dataset_name)
 
 psf_full = al.Kernel2D.from_fits(

@@ -34,6 +34,9 @@ def run_1(
 
     Parameters
     ----------
+    settings_search
+        The settings used to set up the non-linear search which are general to all SLaM pipelines, for example
+        the `path_prefix`.
     analysis
         The analysis class which includes the `log_likelihood_function` and can be customized for the SLaM model-fit.
     source_lp_result
@@ -92,7 +95,8 @@ def run_1(
         mass = source_lp_result.instance.galaxies.lens.mass
         shear = source_lp_result.instance.galaxies.lens.shear
 
-    image_mesh_init.shape = image_mesh_init_shape
+    if image_mesh_init is not None:
+        image_mesh_init.shape = image_mesh_init_shape
 
     model = af.Collection(
         galaxies=af.Collection(
@@ -103,7 +107,7 @@ def run_1(
                 disk=source_lp_result.instance.galaxies.lens.disk,
                 point=source_lp_result.instance.galaxies.lens.point,
                 mass=mass,
-                shear=shear
+                shear=shear,
             ),
             source=af.Model(
                 al.Galaxy,
@@ -118,18 +122,6 @@ def run_1(
         ),
         extra_galaxies=extra_galaxies,
         dataset_model=dataset_model,
-    )
-
-    """
-    For single-dataset analyses, the following code does not change the model or analysis and can be ignored.
-
-    For multi-dataset analyses, the following code updates the model and analysis.
-    """
-    analysis = slam_util.analysis_multi_dataset_from(
-        analysis=analysis,
-        model=model,
-        multi_dataset_offset=True,
-        multi_source_regularization=True,
     )
 
     search = af.Nautilus(
@@ -167,6 +159,9 @@ def run_2(
 
     Parameters
     ----------
+    settings_search
+        The settings used to set up the non-linear search which are general to all SLaM pipelines, for example
+        the `path_prefix`.
     analysis
         The analysis class which includes the `log_likelihood_function` and can be customized for the SLaM model-fit.
     source_lp_result
@@ -232,18 +227,6 @@ def run_2(
             model.galaxies.source.pixelization.image_mesh.pixels = (
                 image_mesh_pixels_fixed
             )
-
-    """
-    For single-dataset analyses, the following code does not change the model or analysis and can be ignored.
-
-    For multi-dataset analyses, the following code updates the model and analysis.
-    """
-    analysis = slam_util.analysis_multi_dataset_from(
-        analysis=analysis,
-        model=model,
-        multi_dataset_offset=True,
-        multi_source_regularization=True,
-    )
 
     """
     __Search (Search 2)__

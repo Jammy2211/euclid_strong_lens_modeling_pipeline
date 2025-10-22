@@ -36,25 +36,35 @@ __Start Here Notebook__
 
 If any code in this script is unclear, refer to the `data_preparation/start_here.ipynb` notebook.
 """
+
 # %matplotlib inline
 # from pyprojroot import here
 # workspace_path = str(here())
 # %cd $workspace_path
 # print(f"Working Directory has been set to `{workspace_path}`")
 
-from os import path
+import argparse
+import numpy as np
+from pathlib import Path
 import autolens as al
 import autolens.plot as aplt
-import numpy as np
 
 """
 __Dataset__
 
 The path where the extra galaxy mask is output, which is `dataset/imaging/extra_galaxies`.
 """
-dataset_name = "EUCLJ174907.29+645946.3"
-dataset_main_path = path.join("dataset", dataset_name)
-dataset_path = path.join(dataset_main_path, "vis")
+parser = argparse.ArgumentParser(description="Lens Model Inputs")
+parser.add_argument(
+    "--dataset", metavar="path", required=True, help="the path to the dataset"
+)
+args = parser.parse_args()
+dataset_name = args.dataset
+
+dataset_main_path = Path("dataset") / dataset_name
+dataset_fits_name = f"{dataset_name}.fits"
+
+vis_index = 3
 
 """
 The pixel scale of the imaging dataset.
@@ -65,7 +75,9 @@ pixel_scales = 0.1
 Load the `Imaging` data, where the extra galaxies are visible in the data.
 """
 data = al.Array2D.from_fits(
-    file_path=path.join(dataset_path, "data.fits"), pixel_scales=pixel_scales
+    file_path=dataset_main_path / dataset_fits_name,
+    hdu=vis_index * 3 + 1,
+    pixel_scales=pixel_scales,
 )
 
 data = al.Array2D(
@@ -82,9 +94,7 @@ Create a 3.0" mask to plot over the image to guide where extra galaxy light need
 mask_radius = 3.0
 
 mask = al.Mask2D.circular(
-    shape_native=data.shape_native,
-    pixel_scales=data.pixel_scales,
-    radius=mask_radius
+    shape_native=data.shape_native, pixel_scales=data.pixel_scales, radius=mask_radius
 )
 
 """
@@ -94,7 +104,9 @@ Load the Scribbler GUI for spray painting the scaled regions of the dataset.
 
 Push Esc when you are finished spray painting.
 """
-scribbler = al.Scribbler(image=data.native, cmap=cmap, brush_width=0.05, mask_overlay=mask)
+scribbler = al.Scribbler(
+    image=data.native, cmap=cmap, brush_width=0.05, mask_overlay=mask
+)
 mask = scribbler.show_mask()
 mask = al.Mask2D(mask=mask, pixel_scales=pixel_scales)
 
@@ -111,7 +123,7 @@ __Output__
 Output the extra galaxies mask, which will be load and used before a model fit.
 """
 mask.output_to_fits(
-    file_path=path.join(dataset_main_path, "mask_extra_galaxies.fits"), overwrite=True
+    file_path=dataset_main_path / "mask_extra_galaxies.fits", overwrite=True
 )
 
 """

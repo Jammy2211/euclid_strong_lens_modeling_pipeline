@@ -13,16 +13,18 @@ Extra galaxies require that the mask is expanded to include their light, which i
 distance of the furthest extra galaxy from the origin and adding a buffer. This mask is used in the `groups.py`
 pipeline to mask the lens and source galaxies and the extra galaxies.
 """
+
 # %matplotlib inline
 # from pyprojroot import here
 # workspace_path = str(here())
 # %cd $workspace_path
 # print(f"Working Directory has been set to `{workspace_path}`")
 
+import argparse
 import json
 import numpy as np
 import os
-from os import path
+from pathlib import Path
 from matplotlib import pyplot as plt
 
 import autolens as al
@@ -33,9 +35,17 @@ __Dataset__
 
 The path where the extra galaxy centres are output, which is `datasetgroup`.
 """
-dataset_name = "EUCLJ174907.29+645946.3"
-dataset_main_path = path.join("dataset", dataset_name)
-dataset_path = path.join(dataset_main_path, "vis")
+parser = argparse.ArgumentParser(description="Lens Model Inputs")
+parser.add_argument(
+    "--dataset", metavar="path", required=True, help="the path to the dataset"
+)
+args = parser.parse_args()
+dataset_name = args.dataset
+
+dataset_main_path = Path("dataset") / dataset_name
+dataset_fits_name = f"{dataset_name}.fits"
+
+vis_index = 3
 
 """
 The pixel scale of the imaging dataset.
@@ -46,7 +56,9 @@ pixel_scales = 0.1
 Load the image which we will use to mark the lens light centre.
 """
 data = al.Array2D.from_fits(
-    file_path=path.join(dataset_path, "data.fits"), pixel_scales=pixel_scales
+    file_path=dataset_main_path / dataset_fits_name,
+    hdu=vis_index * 3 + 1,
+    pixel_scales=pixel_scales,
 )
 
 """
@@ -57,9 +69,7 @@ Create a 3.0" mask to plot over the image to guide where points should be marked
 mask_radius = 3.0
 
 mask = al.Mask2D.circular(
-    shape_native=data.shape_native,
-    pixel_scales=data.pixel_scales,
-    radius=mask_radius
+    shape_native=data.shape_native, pixel_scales=data.pixel_scales, radius=mask_radius
 )
 
 grid = mask.derive_grid.edge
@@ -118,16 +128,20 @@ This will be used as the circular mask radius of any modeling pipeline if a user
 (recommended behaviour).
 """
 if len(extra_galaxies_centres) > 1:
-    extra_galaxies_radii = np.sqrt(extra_galaxies_centres[:, 0] ** 2 + extra_galaxies_centres[:, 1] ** 2)
+    extra_galaxies_radii = np.sqrt(
+        extra_galaxies_centres[:, 0] ** 2 + extra_galaxies_centres[:, 1] ** 2
+    )
     extra_galaxies_radius_buffer = 0.2
-    extra_galaxies_max_radius = np.max(extra_galaxies_radii) + extra_galaxies_radius_buffer
+    extra_galaxies_max_radius = (
+        np.max(extra_galaxies_radii) + extra_galaxies_radius_buffer
+    )
     mask_radius = max(mask_radius, extra_galaxies_max_radius)
 
 info = {}
 
-if os.path.exists(path.join(dataset_main_path, "info.json")):
+if os.path.exists(dataset_main_path / "info.json"):
     try:
-        with open(path.join(dataset_main_path, "info.json")) as json_file:
+        with open(dataset_main_path / "info.json") as json_file:
             info = json.load(json_file)
             json_file.close()
     except FileNotFoundError:
@@ -135,7 +149,7 @@ if os.path.exists(path.join(dataset_main_path, "info.json")):
 
 info["mask_radius"] = mask_radius
 
-with open(path.join(dataset_main_path, "info.json"), "w") as json_file:
+with open(dataset_main_path / "info.json", "w") as json_file:
     json.dump(info, json_file)
     json_file.close()
 
@@ -145,15 +159,10 @@ __Output__
 Output this image of the extra galaxy centres to a .png file in the dataset folder for future reference.
 """
 mask = al.Mask2D.circular(
-    shape_native=data.shape_native,
-    pixel_scales=data.pixel_scales,
-    radius=mask_radius
+    shape_native=data.shape_native, pixel_scales=data.pixel_scales, radius=mask_radius
 )
 
-visuals = aplt.Visuals2D(
-    mask=mask,
-    mass_profile_centres=extra_galaxies_centres
-)
+visuals = aplt.Visuals2D(mask=mask, mass_profile_centres=extra_galaxies_centres)
 
 array_2d_plotter = aplt.Array2DPlotter(
     array=data,
@@ -163,7 +172,7 @@ array_2d_plotter = aplt.Array2DPlotter(
         output=aplt.Output(
             path=dataset_main_path, filename="extra_galaxies_centres", format="png"
         ),
-        use_log10=True
+        use_log10=True,
     ),
 )
 array_2d_plotter.figure_2d()
@@ -174,5 +183,5 @@ when we model them.
 """
 al.output_to_json(
     obj=extra_galaxies_centres,
-    file_path=path.join(dataset_main_path, "extra_galaxies_centres.json"),
+    file_path=dataset_main_path / "extra_galaxies_centres.json",
 )

@@ -86,15 +86,15 @@ If any code in this script is unclear, refer to the `chaining/start_here.ipynb` 
 def fit(
     dataset_name: str,
     mask_radius: float = None,
-    number_of_cores: int = 1,
-    iterations_per_update: int = 5000,
+    iterations_per_quick_update: int = 5000,
 ):
 
     import json
     import numpy as np
-    import os
     import sys
     from os import path
+
+    from autoconf import conf
     import autofit as af
     import autolens as al
     import autolens.plot as aplt
@@ -192,7 +192,6 @@ def fit(
         path_prefix=path.join("euclid_groups", dataset_name),
         unique_tag=dataset_waveband,
         info=None,
-        number_of_cores=number_of_cores,
         session=None,
     )
 
@@ -203,32 +202,6 @@ def fit(
     """
     redshift_lens = 0.5
     redshift_source = 1.0
-
-    """
-    __HPC Mode__
-
-    When running in parallel via Python `multiprocessing`, display issues with the `matplotlib` backend can arise
-    and cause the code to crash.
-
-    HPC mode sets the backend to mitigate this issue and is set to run throughout the entire pipeline below.
-
-    The `iterations_per_update` below specifies the number of iterations performed by the non-linear search between
-    output, where visuals of the maximum log likelihood model, lens model parameter estimates and other information
-    are output to hard-disk.
-
-    There are a number of environment variables which must be set to ensure parallelization is efficient, which
-    are set below in this script to ensure the pipeline always runs efficiently even if you have not manually set them.
-    """
-    from autoconf import conf
-
-    conf.instance["general"]["hpc"]["hpc_mode"] = True
-    conf.instance["general"]["hpc"]["iterations_per_update"] = iterations_per_update
-
-    os.environ["OPENBLAS_NUM_THREADS"] = "1"
-    os.environ["MKL_NUM_THREADS"] = "1"
-    os.environ["OMP_NUM_THREADS"] = "1"
-    os.environ["VECLIB_MAXIMUM_THREADS"] = "1"
-    os.environ["NUMEXPR_NUM_THREADS"] = "1"
 
     """
     __SOURCE LP PIPELINE__
@@ -377,15 +350,19 @@ def fit(
     """
     extra_galaxies = source_lp_result.model.extra_galaxies
 
-    for galaxy, result_galaxy in zip(extra_galaxies, source_lp_result.instance.extra_galaxies):
+    for galaxy, result_galaxy in zip(
+        extra_galaxies, source_lp_result.instance.extra_galaxies
+    ):
         galaxy.bulge = result_galaxy.bulge
 
     analysis = al.AnalysisImaging(
         dataset=dataset,
         adapt_image_maker=al.AdaptImageMaker(result=source_lp_result),
-        positions_likelihood=source_lp_result.positions_likelihood_from(
-            factor=3.0, minimum_threshold=0.2
-        ),
+        positions_likelihood_list=[
+            source_lp_result.positions_likelihood_from(
+                factor=3.0, minimum_threshold=0.2
+            )
+        ],
     )
 
     source_pix_result_1 = slam.source_pix.run_1(
@@ -470,7 +447,9 @@ def fit(
 
     extra_galaxies = source_lp_result.model.extra_galaxies
 
-    for galaxy, result_galaxy in zip(extra_galaxies, source_pix_result_1.instance.extra_galaxies):
+    for galaxy, result_galaxy in zip(
+        extra_galaxies, source_pix_result_1.instance.extra_galaxies
+    ):
         galaxy.mass = result_galaxy.mass
 
     light_result = slam.light_lp.run(
@@ -497,7 +476,9 @@ def fit(
     """
     extra_galaxies = source_lp_result.model.extra_galaxies
 
-    for galaxy, result_galaxy in zip(extra_galaxies, light_result.instance.extra_galaxies):
+    for galaxy, result_galaxy in zip(
+        extra_galaxies, light_result.instance.extra_galaxies
+    ):
         galaxy.bulge = result_galaxy.bulge
 
     analysis = al.AnalysisImaging(
@@ -564,23 +545,15 @@ if __name__ == "__main__":
         metavar="float",
         required=False,
         help="The Circular Radius of the Mask",
-        default=None
+        default=None,
     )
 
     parser.add_argument(
-        "--number_of_cores",
-        metavar="int",
-        required=False,
-        help="The number of cores to parallelize the fit",
-        default=1
-    )
-
-    parser.add_argument(
-        "--iterations_per_update",
+        "--iterations_per_quick_update",
         metavar="int",
         required=False,
         help="The number of iterations between each update",
-        default=5000
+        default=5000,
     )
 
     args = parser.parse_args()
@@ -594,12 +567,15 @@ if __name__ == "__main__":
     or uses the default value of 3.0" if this is not available.
     """
     mask_radius = float(args.mask_radius) if args.mask_radius is not None else None
-    number_of_cores = int(args.number_of_cores) if args.number_of_cores is not None else 1
-    iterations_per_update = int(args.iterations_per_update) if args.iterations_per_update is not None else 5000
+
+    iterations_per_quick_update = (
+        int(args.iterations_per_quick_update)
+        if args.iterations_per_quick_update is not None
+        else 5000
+    )
 
     fit(
         dataset_name=args.dataset,
         mask_radius=mask_radius,
-        number_of_cores=number_of_cores,
-        iterations_per_update=iterations_per_update,
+        iterations_per_quick_update=iterations_per_quick_update,
     )
