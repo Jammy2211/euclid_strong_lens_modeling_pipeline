@@ -111,7 +111,7 @@ Use a query on the aggregator to only get results for the `mass_total[1]` model-
 model results.
 """
 agg_query = agg.query(agg.search.name == search_name)
-agg_query = agg.query(agg_query.unique_tag == dataset_waveband)
+agg_query = agg_query.query(agg_query.unique_tag == dataset_waveband)
 
 """
 Extract the `AggregateImages` object, which has specific functions for loading image files (e.g. .png, .pdf) and

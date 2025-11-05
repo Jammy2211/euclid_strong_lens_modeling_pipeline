@@ -147,6 +147,15 @@ if os.path.exists(dataset_main_path / "info.json"):
     except FileNotFoundError:
         info = {}
 
+    try:
+        header = al.header_obj_from(
+            file_path=dataset_main_path / dataset_fits_name,
+            hdu=vis_index * 3 + 1,
+        )
+        zero_point = header["MAGZERO"]
+    except FileNotFoundError:
+        zero_point = None
+
 info["mask_radius"] = mask_radius
 
 with open(dataset_main_path / "info.json", "w") as json_file:

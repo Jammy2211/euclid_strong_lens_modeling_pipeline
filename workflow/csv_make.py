@@ -104,7 +104,7 @@ Use a query on the aggregator to only get results for the `mass_total[1]` model-
 model results.
 """
 agg_query = agg.query(agg.search.name == search_name)
-agg_query = agg.query(agg_query.unique_tag == dataset_waveband)
+agg_query = agg_query.query(agg_query.unique_tag == dataset_waveband)
 
 """
 Extract the `AggregateCSV` object, which has specific functions for outputting results in a CSV format.
@@ -120,7 +120,7 @@ model = [model for model in agg_query.values("model")][0]
 print(model.paths)
 
 """
-__Adding CSV Columns_
+__Adding CSV Columns__
 
 We first make a simple .csv which contains two columns, corresponding to the inferred median PDF values for
 the y centre of the mass of the lens galaxy and its einstein radius.
@@ -349,72 +349,6 @@ We can now output the results of all our model-fits to the .csv file, using the 
 """
 agg_csv.save(path=workflow_path / "result_lens_mge__mge_lens_only.csv")
 
-""""
-__Euclid Q1 Example: Result Lens Mass__
-
-We now show a more realistic example of how the .csv files can be used to output results from a model-fit.
-
-We create a .csv file containing all lens mass model parameters for the fit to each "vis" dataset.
-
-The first column is a computed value, the `einstein_radius_effective`, which is the area within the tangential
-critical curve. This requires using the `Tracer` of PyAutoLens to compute the critical curves.
-
-[This CSV does not include errors as the feature is not yet supported, however you can compute errors using the
-"Computed Columns" example above and it will be added soon!]
 """
-agg = Aggregator.from_directory(
-    directory=path.join("output", pipeline_name),
-)
-agg_query = agg.query(agg.search.name == search_name)
-agg_query = agg_query.query(agg_query.search.unique_tag == dataset_waveband)
-
-agg_csv = af.AggregateCSV(aggregator=agg_query)
-
-
-def einstein_radius_effective_from(samples):
-    instance = samples.median_pdf()
-
-    tracer = al.Tracer(galaxies=instance.galaxies)
-
-    grid = al.Grid2D.uniform(shape_native=(100, 100), pixel_scales=0.1)
-
-    return tracer.einstein_radius_from(grid=grid)
-
-
-agg_csv.add_computed_column(
-    name="einstein_radius_effective",
-    compute=einstein_radius_effective_from,
-)
-
-agg_csv.add_variable(
-    argument="galaxies.lens.mass.centre.centre_0",
-    name="mass_centre_0",
-)
-agg_csv.add_variable(
-    argument="galaxies.lens.mass.centre.centre_1",
-    name="mass_centre_1",
-)
-agg_csv.add_variable(
-    argument="galaxies.lens.mass.ell_comps.ell_comps_0",
-    name="mass_ell_comps_0",
-)
-agg_csv.add_variable(
-    argument="galaxies.lens.mass.ell_comps.ell_comps_1",
-    name="mass_ell_comps_1",
-)
-agg_csv.add_variable(
-    argument="galaxies.lens.mass.einstein_radius",
-    name="mass_einstein_radius",
-)
-
-agg_csv.save(path=workflow_path / "csv_q1_mass_model.csv")
-
-""""
-__Euclid Q1 Example: Result Magnitudes__
-
-We now show another realistic example of how the .csv files can be used to output results from a model-fit.
-
-We create a .csv file containing all lens lensed source and delensed source magnitudes.
-
-
+Finished.
 """

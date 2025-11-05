@@ -86,8 +86,17 @@ def fit(
         info = {}
 
     try:
+        header = al.header_obj_from(
+            file_path=dataset_main_path / dataset_fits_name,
+            hdu=vis_index * 3 + 1,
+        )
+        zero_point = header["MAGZERO"]
+    except FileNotFoundError:
+        zero_point = None
+
+    try:
         mask_extra_galaxies = al.Mask2D.from_fits(
-            file_path=f"{dataset_main_path}/mask_extra_galaxies.fits",
+            file_path=dataset_main_path / "mask_extra_galaxies.fits",
             pixel_scales=0.1,
             invert=True,
         )
@@ -139,7 +148,7 @@ def fit(
     settings_search = af.SettingsSearch(
         path_prefix=Path("mge_lens_model") / dataset_name,
         unique_tag=dataset_waveband,
-        info=None,
+        info={"zero_point": zero_point},
         session=None,
     )
 
@@ -332,6 +341,15 @@ def fit_waveband(
         )
 
         try:
+            header = al.header_obj_from(
+                file_path=dataset_main_path / dataset_fits_name,
+                hdu=dataset_index * 3 + 1,
+            )
+            zero_point = header["MAGZERO"]
+        except FileNotFoundError:
+            zero_point = None
+
+        try:
             mask_extra_galaxies = al.Mask2D.from_fits(
                 file_path=dataset_main_path / "mask_extra_galaxies.fits",
                 pixel_scales=0.1,
@@ -372,7 +390,7 @@ def fit_waveband(
         settings_search = af.SettingsSearch(
             path_prefix=Path("mge_lens_model") / dataset_name,
             unique_tag=dataset_waveband,
-            info=None,
+            info={"zero_point": zero_point},
             session=None,
         )
 

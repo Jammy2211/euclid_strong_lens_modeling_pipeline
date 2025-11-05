@@ -118,9 +118,9 @@ class AnalysisImaging(al.AnalysisImaging):
     Visualizer = VisualizerImaging
 
     LATENT_KEYS = [
-        "galaxies.lens.bulge.intensity_total",
-        "galaxies.lens.shear.magnitude",
-        "galaxies.lens.shear.angle",
+        "total_lens_flux",
+        "total_lensed_source_flux",
+        "total_source_flux",
     ]
 
     def compute_latent_variables(self, parameters, model):
@@ -166,24 +166,26 @@ class AnalysisImaging(al.AnalysisImaging):
 
         instance = model.instance_from_vector(vector=parameters)
 
-        intensity_total = jnp.nan
-        magnitude = jnp.nan
-        angle = jnp.nan
-
         fit = self.fit_from(instance=instance)
+        tracer = fit.tracer_linear_light_profiles_to_light_profiles
 
-        if hasattr(instance.galaxies.lens, "bulge"):
-            if hasattr(instance.galaxies.lens.bulge, "profile_list"):
-                lens = fit.tracer_linear_light_profiles_to_light_profiles.galaxies[0]
-                intensity_total = sum([p.intensity for p in lens.bulge.profile_list])
+        try:
+            total_lens_flux = np.sum(tracer.galaxies[0].image_2d_from(grid=self.dataset.grids.lp))
+        except AttributeError:
+            total_lens_flux = jnp.nan
 
-        if hasattr(instance.galaxies.lens, "shear"):
-            magnitude, angle = al.convert.shear_magnitude_and_angle_from(
-                gamma_1=instance.galaxies.lens.shear.gamma_1,
-                gamma_2=instance.galaxies.lens.shear.gamma_2,
-            )
+        try:
+            source_plane_grid = tracer.traced_grid_2d_list_from(grid=self.dataset.grids.lp)[-1]
+            total_lensed_source_flux = np.sum(tracer.galaxies[-1].image_2d_from(grid=source_plane_grid))
+        except AttributeError:
+            total_lensed_source_flux = jnp.nan
 
-        return (intensity_total, magnitude, angle)
+        try:
+            total_source_flux = np.sum(tracer.galaxies[-1].image_2d_from(grid=self.dataset.grids.lp))
+        except AttributeError:
+            total_source_flux = jnp.nan
+
+        return (total_lens_flux, total_lensed_source_flux, total_source_flux)
 
 
 def dataset_instrument_hdu_dict_via_fits_from(
