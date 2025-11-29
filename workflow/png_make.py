@@ -242,6 +242,7 @@ configuration, this ENum simply gives each a name that we can call.
 """
 from enum import Enum
 
+
 class SubplotRgb(Enum):
     """
     The subplots that can be extracted from the subplot_fit image.
@@ -253,6 +254,7 @@ class SubplotRgb(Enum):
     rgb_1 = (1, 0)
     rgb_0_zoom = (0, 1)
     rgb_1_zoom = (1, 1)
+
 
 subplot_rgb = SubplotRgb
 

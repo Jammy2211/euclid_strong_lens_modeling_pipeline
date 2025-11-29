@@ -1,8 +1,6 @@
 import autofit as af
 import autolens as al
 
-from . import slam_util
-
 from typing import Union, Optional, Tuple
 
 
@@ -153,6 +151,7 @@ def run(
         name="mass_total[1]",
         **settings_search.search_dict,
         n_live=150,
+        n_batch=30
     )
 
     result = search.fit(model=model, analysis=analysis, **settings_search.fit_dict)

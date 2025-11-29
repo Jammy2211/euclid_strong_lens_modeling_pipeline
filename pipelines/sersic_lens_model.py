@@ -40,13 +40,16 @@ a process called an "inversion". It essentially forms a relatively simple parame
 signficantly accelerated when modeling is performed using GPUs via JAX.
 """
 
+from start_here import fit
+from pipelines.lens_model_waveband import fit_waveband
 
-def fit(
+
+def fit_sersic(
     dataset_name: str,
+    vis_result,
     mask_radius: float = 3.0,
     iterations_per_quick_update: int = 5000,
 ):
-
     import util
     import json
     import numpy as np
@@ -57,28 +60,10 @@ def fit(
 
     """
     __Dataset__
-
-    Define the dataset path, assumed to follow:
-
-        dataset/<dataset_name>/<dataset_name>.fits
-
-    That is, the dataset lives in a subfolder named after it, and the main FITS file shares the same name.
     """
     dataset_main_path = Path("dataset") / dataset_name
     dataset_fits_name = f"{dataset_name}.fits"
 
-    """
-    __Dataset Wavebands__
-
-    The following dictionary gives the names of the wavebands we are going to fit and maps them to their
-    hdu in the FITS file. 
-
-    It is created by inspecing the .fits headers of every hdu and extracting the waveband name from the header,
-    mapping it to the HDU index.
-
-    In this pipeline, we fit the VIS waveband, which is the highest quality data and therefore best suited to
-    initializing a robust lens model.
-    """
     dataset_index_dict = util.dataset_instrument_hdu_dict_via_fits_from(
         dataset_path=dataset_main_path,
         dataset_fits_name=dataset_fits_name,
@@ -89,17 +74,6 @@ def fit(
 
     vis_index = dataset_index_dict[dataset_waveband]
 
-    """
-    __Dataset__
-        
-    We begin by loading the dataset. Three ingredients are needed for lens modeling:
-    
-    1. The image itself (CCD counts).
-    2. A noise-map (per-pixel RMS noise).
-    3. The PSF (Point Spread Function).
-    
-    The `pixel_scales` value converts pixel units into arcseconds, which for Euclid VIS is 0.1" per pixel.
-    """
     dataset = al.Imaging.from_fits(
         data_path=dataset_main_path / dataset_fits_name,
         data_hdu=vis_index * 3 + 1,
@@ -111,19 +85,12 @@ def fit(
         check_noise_map=False,
     )
 
-    """
-    Extract the brightest central pixel of the lens light from the data, which is used to 
-    initializes priors on the lens model centre and other aspects of the fit,
-    """
     dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
         region=(-0.3, 0.3, -0.3, 0.3), box_size=2
     )
 
     """
     __Info__
-    
-    An `info.json` file can be used to store metadata about the dataset, which is passed
-    through the pipeline and can be used in subsequent interpretation.
     """
     try:
         with open(dataset_main_path / "info.json") as json_file:
@@ -134,10 +101,6 @@ def fit(
 
     """
     __Header__
-    
-    Load the .fits header of the Euclid VIS data, which will contain many useful pieces of metadata,
-    
-    We specifically extract the magnitude zero-point, which is used to convert between flux and magnitudes.
     """
     try:
         header = al.header_obj_from(
@@ -150,19 +113,6 @@ def fit(
 
     """
     __Extra Galaxy Removal__
-    
-    There may be regions of an image that have signal near the lens and source that is from other galaxies not associated
-    with the strong lens we are studying. The emission from these images will impact our model fitting and needs to be
-    removed from the analysis.
-    
-    This `mask_extra_galaxies` is used to prevent them from impacting a fit by scaling the RMS noise map values to
-    large values. This mask may also include emission from objects which are not technically galaxies,
-    but blend with the galaxy we are studying in a similar way. Common examples of such objects are foreground stars
-    or emission due to the data reduction process.
-    
-    In this example, the noise is scaled over all regions of the image, even those quite far away from the strong lens
-    in the centre. We are next going to apply a 2.5" circular mask which means we only analyse the central region of
-    the image. It only in these central regions where for the actual lens analysis it matters that we scaled the noise.
     """
     try:
         mask_extra_galaxies = al.Mask2D.from_fits(
@@ -177,15 +127,6 @@ def fit(
 
     """
     __Mask__
-    
-    Lens modeling does not need to fit the entire image, only the region containing lens and
-    source light. We therefore define a circular mask around the lens.
-    
-    - Make sure the mask fully encloses the lensed arcs and the lens galaxy.
-    - Avoid masking too much empty sky, as this slows fitting without adding information.
-    
-    We’ll also oversample the central pixels, which improves modeling accuracy without adding
-    unnecessary cost far from the lens.
     """
     if mask_radius is None:
         mask_radius = info.get("mask_radius") or 3.0
@@ -200,36 +141,43 @@ def fit(
 
     dataset = dataset.apply_mask(mask=mask)
 
-    over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
+    """
+    __Over Sampling__
+    
+    The Sersic profile diverges at the centre of the profile, which can cause inaccuracies if
+    the central pixel is not sampled enough. We therefore increase the over sampling in regions
+    of the source and lens galaxy centres adaptively.
+    """
+    tracer = vis_result.max_log_likelihood_tracer
+
+    traced_grid = tracer.traced_grid_2d_list_from(
         grid=dataset.grid,
-        sub_size_list=[4, 2, 1],
+    )[-1]
+
+    source_centre = tracer.galaxies[1].bulge.profile_list[0].centre
+
+    over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
+        grid=traced_grid,
+        sub_size_list=[16, 4, 2],
+        radial_list=[0.1, 0.3],
+        centre_list=[source_centre],
+    )
+
+    over_sample_size_lens = al.util.over_sample.over_sample_size_via_radial_bins_from(
+        grid=dataset.grid,
+        sub_size_list=[16, 4, 1],
         radial_list=[0.1, 0.3],
         centre_list=[dataset_centre],
     )
 
-    dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
+    over_sample_size = np.where(
+        over_sample_size > over_sample_size_lens,
+        over_sample_size,
+        over_sample_size_lens,
+    )
+    over_sample_size = al.Array2D(values=over_sample_size, mask=mask)
 
-    """
-    __Positions__
-    
-    We can optionally add a penalty term ot the likelihood function, which penalizes models where the brightest 
-    multiple images of the lensed source galaxy do not trace close to one another in the source plane. This 
-    removes "demagnified source solutions" from the source pixelization, which one is likely to infer without this 
-    penalty.
-    
-    A comprehensive description of why we do this is given at the following readthedocs page. I strongly recommend you 
-    read this page in full if you are not familiar with the positions likelihood penalty and demagnified source 
-    reconstructions:
-    
-     https://pyautolens.readthedocs.io/en/latest/general/demagnified_solutions.html
-    """
-    try:
-        positions = al.Grid2DIrregular(
-            values=al.from_json(file_path=dataset_main_path / "positions.json")
-        )
-        positions_likelihood_list = [al.PositionsLH(threshold=0.1, positions=positions)]
-    except FileNotFoundError:
-        positions_likelihood_list = None
+    dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
     """
     __Settings AutoFit__
@@ -240,58 +188,44 @@ def fit(
 
     settings_search = af.SettingsSearch(
         path_prefix=Path(dataset_name),
-        unique_tag="initial_lens_model",
+        unique_tag="sersic_lens_model",
         info={"magzero": magzero},
         session=None,
     )
 
     """
     __Redshifts__
-
-    The redshifts of the lens and source galaxies.
-    
-    For a single plane strong lens, PyAutoLens units are dimensionless, meaning redshifts do not change lens
-    modeling results. Therefore, the values input below will not change the lens model results at all.
-    
-    These effectively act as placeholders for now, with redshift information in Euclid coming after lens modeling
-    via photometric redshhift fitting of the lens and source galaxies.
     """
     redshift_lens = 0.5
     redshift_source = 1.0
 
     """
-    __Model: MGE Lens Model__
+    __Model: Sersic Lens Model__
 
-    This pipeline fits the lens and source galaxy light together with the lens mass distribution:
+    This pipeline fits the lens and source galaxy light together, both as Sersics, using a fixed lens mass model
+    from the `initial_lens_model` pipeline:
 
-     - The lens light is represented 20 Gaussians [4 non-linear parameters].  
-       Each Gaussian’s intensity is solved via linear inversion [60 linear parameters].  
+     - The lens light is a linear Sersic profile [6 non-linear parameters].  
 
-     - The source light is represented by 20 Gaussians with [4 non-linear parameters].  
-       Each Gaussian’s intensity is solved via linear inversion [20 linear parameters].  
+     - The source light is represented by a linear Sersic profile [6 non-linear parameters].  
 
-     - The lens mass is modeled as an Isothermal Ellipsoid (SIE) with a cente fixed to the brighest pixel and an
-        External Shear [5 non-linear parameters].
+     - The lens mass is modeled as an Isothermal Ellipsoid (SIE) with a centre fixed to the brighest pixel and an
+        External Shear, both fixed to the result of the `initial_lens_model` pipeline [0 non-linear parameters].
 
-    Overall the model has 15 non-linear parameters, while most parameters are linear and solved efficiently at every 
-    likelihood evaluation. This keeps the parameter space low-dimensional and well-conditioned, enabling efficient 
-    sampling with a high probability of finding the global maximum.      
+    Overall the model has 12 non-linear parameters.    
     """
     # Lens:
 
-    lens_bulge = al.model_util.mge_model_from(
-        mask_radius=mask_radius,
-        total_gaussians=20,
-        centre_prior_is_uniform=True,
-        centre=dataset_centre,
+    lens_bulge = af.Model(al.lp_linear.Sersic)
+    lens_bulge.centre.centre_0 = (
+        vis_result.model_centred.galaxies.lens.bulge.profile_list[0].centre.centre_0
+    )
+    lens_bulge.centre.centre_1 = (
+        vis_result.model_centred.galaxies.lens.bulge.profile_list[0].centre.centre_1
     )
 
-    mass = af.Model(al.mp.Isothermal)
-
-    mass.centre.centre_0 = dataset_centre[0]
-    mass.centre.centre_1 = dataset_centre[1]
-
-    shear = af.Model(al.mp.ExternalShear)
+    mass = vis_result.instance.galaxies.lens.mass
+    shear = vis_result.instance.galaxies.lens.shear
 
     lens = af.Model(
         al.Galaxy, redshift=redshift_lens, bulge=lens_bulge, mass=mass, shear=shear
@@ -299,8 +233,12 @@ def fit(
 
     # Source:
 
-    source_bulge = al.model_util.mge_model_from(
-        mask_radius=mask_radius, total_gaussians=20, centre_prior_is_uniform=False
+    source_bulge = af.Model(al.lp_linear.Sersic)
+    source_bulge.centre.centre_0 = (
+        vis_result.model_centred.galaxies.source.bulge.profile_list[0].centre.centre_0
+    )
+    source_bulge.centre.centre_1 = (
+        vis_result.model_centred.galaxies.source.bulge.profile_list[0].centre.centre_1
     )
 
     source = af.Model(al.Galaxy, redshift=redshift_source, bulge=source_bulge)
@@ -311,27 +249,12 @@ def fit(
 
     """
     __Model Fit__
-
-    We now fit the data with the lens model using the non-linear fitting method and nested sampling algorithm Nautilus.
-
-    This requires an `AnalysisImaging` object, which defines the `log_likelihood_function` used by Nautilus to fit
-    the model to the imaging data.
-
-    __JAX__
-
-    PyAutoLens uses JAX under the hood for fast GPU/CPU acceleration. If JAX is installed with GPU
-    support, your fits will run much faster (around 10 minutes instead of an hour). If only a CPU is available,
-    JAX will still provide a speed up via multithreading, with fits taking around 20-30 minutes.
-
-    If you don’t have a GPU locally, consider Google Colab which provides free GPUs, so your modeling runs are much faster.
     """
     analysis = util.AnalysisImaging(
         dataset=dataset,
-        positions_likelihood_list=positions_likelihood_list,
-        use_jax=True,  # JAX will use GPUs for acceleration if available, else JAX will use multithreaded CPUs.
         dataset_main_path=dataset_main_path,
+        use_jax=True,  # JAX will use GPUs for acceleration if available, else JAX will use multithreaded CPUs.
         title_prefix=dataset_waveband.upper(),
-        plot_rgb=True,
         **settings_search.info,
     )
 
@@ -340,25 +263,18 @@ def fit(
         **settings_search.search_dict,
         n_live=100,  # The number of Nautilus "live" points, increase for more complex models.
         batch_size=50,  # For fast GPU fitting lens model fits are batched and run simultaneously.
-        iterations_per_quick_update=iterations_per_quick_update,  # Every N iterations the max likelihood model is visualized in the Jupter Notebook and output to hard-disk.
-        n_like_max=100000,  # The maximum number of likelihood evaluations, models typically take < 30000 samples so this stops runaway fits.
+        iterations_per_quick_update=iterations_per_quick_update,
+        # Every N iterations the max likelihood model is visualized in the Jupter Notebook and output to hard-disk.
+        n_like_max=100000,
+        # The maximum number of likelihood evaluations, models typically take < 30000 samples so this stops runaway fits.
     )
 
-    """
-    __Model-Fit__
-
-    We can now begin the model-fit by passing the model and analysis object to the search, which performs the 
-    Nautilus non-linear search in order to find which models fit the data with the highest likelihood.
-    
-    **Run Time Error:** On certain operating systems (e.g. Windows, Linux) and Python versions, the code below may produce 
-    an error. If this occurs, see the `autolens_workspace/guides/modeling/bug_fix` example for a fix.
-    """
     print(
         """
         The non-linear search has begun running.
-    
+
         This Jupyter notebook cell with progress once the search has completed - this could take a few minutes!
-    
+
         On-the-fly updates every iterations_per_quick_update are printed to the notebook.
         """
     )
@@ -409,6 +325,22 @@ if __name__ == "__main__":
     """
     vis_result = fit(
         dataset_name=args.dataset,
+        mask_radius=mask_radius,
+        iterations_per_quick_update=iterations_per_quick_update,
+    )
+
+    sersic_result = fit_sersic(
+        dataset_name=args.dataset,
+        vis_result=vis_result,
+        mask_radius=mask_radius,
+        iterations_per_quick_update=iterations_per_quick_update,
+    )
+
+    fit_waveband(
+        dataset_name=args.dataset,
+        unique_tag="sersic_lens_model",
+        vis_result=sersic_result,
+        use_sersic_over_sampling=True,
         mask_radius=mask_radius,
         iterations_per_quick_update=iterations_per_quick_update,
     )

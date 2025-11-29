@@ -1,8 +1,6 @@
 import autofit as af
 import autolens as al
 
-from . import slam_util
-
 from typing import Optional, Union
 
 
@@ -143,6 +141,7 @@ def run(
         name="mass_light_dark[1]",
         **settings_search.search_dict,
         n_live=250,
+        n_batch=30
     )
 
     result = search.fit(model=model, analysis=analysis, **settings_search.fit_dict)

@@ -152,9 +152,9 @@ if os.path.exists(dataset_main_path / "info.json"):
             file_path=dataset_main_path / dataset_fits_name,
             hdu=vis_index * 3 + 1,
         )
-        zero_point = header["MAGZERO"]
+        magzero = header["MAGZERO"]
     except FileNotFoundError:
-        zero_point = None
+        magzero = None
 
 info["mask_radius"] = mask_radius
 

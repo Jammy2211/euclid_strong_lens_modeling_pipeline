@@ -35,6 +35,7 @@ because it is optimized for fast querying of results.
 See the package `results/database` for a full description of how to set up the database and the benefits it provides,
 especially if loading results from hard-disk is slow.
 """
+
 # %matplotlib inline
 # from pyprojroot import here
 # workspace_path = str(here())
@@ -336,6 +337,7 @@ def add_var(arg_suffix: str, name: str):
         name=name,
         value_types=value_types,
     )
+
 
 add_var("0.centre.centre_0", "bulge_centre_0")
 add_var("0.centre.centre_1", "bulge_centre_1")

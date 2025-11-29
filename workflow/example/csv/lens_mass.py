@@ -8,6 +8,7 @@ containing all lens mass model parameters for the fit to each "vis" dataset.
 The .csv workflow API is described in `workflow/csv_make.py` and you should read that tutorial first in full
 before reading this example, as the same API is used here.
 """
+
 # %matplotlib inline
 # from pyprojroot import here
 # workspace_path = str(here())
@@ -140,6 +141,8 @@ Notes:
     actual critical‐curve geometry, rather than just the parametrised lens mass model’s θ_E.
     - Units: The dataset uses angular units (arc-seconds) for all radii.  
 """
+
+
 def einstein_radius_effective_from(result):
 
     samples = result.samples
@@ -151,6 +154,7 @@ def einstein_radius_effective_from(result):
     grid = al.Grid2D.uniform(shape_native=(100, 100), pixel_scales=0.1)
 
     return tracer.einstein_radius_from(grid=grid)
+
 
 agg_csv.add_computed_column(
     name="einstein_radius_effective",

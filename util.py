@@ -1,15 +1,135 @@
-"""
-__Custom Visualizer & Analysis__
-"""
-
 from astropy.io import fits
-import jax.numpy as jnp
 import numpy as np
 from PIL import Image
 
 import autofit as af
 import autolens as al
 import autolens.plot as aplt
+
+
+def ab_mag_via_flux_from(flux, magzero, xp=np):
+    """
+    Convert image flux values (ADU) into calibrated astronomical AB magnitudes.
+
+    This uses the standard relation:
+        m_AB = -2.5 log10(flux) + magzero
+
+    `flux` and `magzero` must be in consistent units. Euclid VIS, NISP and EXT data are
+    typically in different units (E.g. VIS is ADU / second, NISP and EXT are
+    electrons / second). However, because `magzero` is also in these units, this
+    function does not need to know the specific units of `flux`.
+
+    Parameters
+    ----------
+    flux : float or xp.ndarray
+        Measured flux value(s) in image units (ADU). Must be strictly positive.
+    magzero : float
+        Photometric zero-point defining the AB magnitude system for the image.
+
+    Returns
+    -------
+    ab_mag : float or xp.ndarray
+        The corresponding AB magnitude(s).
+    """
+    ab_mag = -2.5 * xp.log10(flux) + magzero
+    return ab_mag
+
+
+def flux_mujy_via_ab_mag_from(ab_mag, xp=np):
+    """
+    Convert AB magnitudes into flux density expressed in microJansky (µJy).
+
+    This uses the AB definition where a source with 0 mag has a flux of 3631 Jy.
+
+    Parameters
+    ----------
+    ab_mag : float or array-like
+        AB magnitude value(s).
+
+    Returns
+    -------
+    flux_mujy : float or xp.ndarray
+        Flux densities in microJansky (µJy).
+    """
+    flux_mujy = 3631e6 * 10 ** (-0.4 * ab_mag)
+    return flux_mujy
+
+
+def aperture_flux_from(image_2d, centre, radius_pixels, xp=np):
+    """
+    Measure enclosed flux inside a single circular aperture on an image.
+
+    Given an image and a central coordinate (typically the lens centre),
+    compute the total pixel flux within a circular aperture of specified radius.
+
+    Parameters
+    ----------
+    image_2d : 2D xp.ndarray
+        Image data (NumPy or JAX array).
+    centre : (float, float)
+        (y, x) coordinate defining the centre of the aperture in pixel units.
+    radius_pixels : float
+        Aperture radius in pixel units.
+    xp : array module, optional
+        Array namespace (default: numpy). Can also be jax.numpy.
+
+    Returns
+    -------
+    float
+        Total flux inside the circular aperture.
+    """
+    y0, x0 = centre
+    yy, xx = xp.indices(image_2d.shape)
+
+    rr = xp.sqrt((yy - y0) ** 2 + (xx - x0) ** 2)
+
+    # mask = 1 inside aperture, 0 outside (ensures JAX-safety)
+    mask = (rr <= radius_pixels).astype(image_2d.dtype)
+
+    # Equivalent to summing only those inside aperture, but no boolean indexing
+    return xp.sum(image_2d * mask)
+
+
+def dataset_instrument_hdu_dict_via_fits_from(
+    dataset_path, dataset_fits_name, image_tag: str = "_FLUX"
+):
+    """
+    Load a dictionary mapping dataset instruments (e.g. DES_g, NIR_Y) to their index in a multi-extension
+    fits file.
+
+    Parameters
+    ----------
+    dataset_path
+        The path where the multi-extension fits file is stored.
+    dataset_fits_name
+        The name of the multi-extension fits file.
+    image_tag
+        The tag appended to the instrument name of the image HDU, e.g. _FLUX, _IMAGE, which is used to pick
+        out the image HDUs from the fits file and ignore other HDUs like noise maps or PSFs.
+
+    Returns
+    -------
+    A dictionary mapping dataset names to their index in the fits file.
+    """
+    hdu_list = fits.open(dataset_path / dataset_fits_name)
+
+    # Build dictionary: {name: index}
+    hdu_dict = {}
+    for i, hdu in enumerate(hdu_list):
+        name = hdu.name if hdu.name else ("PRIMARY" if i == 0 else f"UNNAMED_{i}")
+        hdu_dict[name] = i
+
+    instrument_dict = {}
+    counter = 0
+
+    for hdu in hdu_list:
+        name = hdu.name
+        if name.endswith(image_tag):
+            band = name.replace(image_tag, "").lower()
+            instrument_dict[band] = counter
+            counter += 1
+
+    return instrument_dict
 
 
 class VisualizerImaging(al.VisualizerImaging):
@@ -49,6 +169,10 @@ class VisualizerImaging(al.VisualizerImaging):
             The model object, which includes model components representing the galaxies that are fitted to
             the imaging data.
         """
+        skip_rgb_plot = analysis.kwargs.get("skip_rgb_plot", False)
+        if skip_rgb_plot:
+            return
+
         dataset = analysis.dataset
         dataset_main_path = analysis.kwargs["dataset_main_path"]
 
@@ -118,9 +242,15 @@ class AnalysisImaging(al.AnalysisImaging):
     Visualizer = VisualizerImaging
 
     LATENT_KEYS = [
-        "total_lens_flux",
-        "total_lensed_source_flux",
-        "total_source_flux",
+        "latent.total_lens_flux",
+        "latent.total_lens_flux_13_pix",
+        "latent.total_lens_flux_26_pix",
+        "latent.total_lens_flux_39_pix",
+        "latent.total_lens_flux_52_pix",
+        "latent.total_lensed_source_flux",
+        "latent.total_source_flux",
+        "latent.magnification",
+    #    "latent_effective_einstein_radius"
     ]
 
     def compute_latent_variables(self, parameters, model):
@@ -164,67 +294,135 @@ class AnalysisImaging(al.AnalysisImaging):
 
         """
 
+        xp = self._xp
+
         instance = model.instance_from_vector(vector=parameters)
 
         fit = self.fit_from(instance=instance)
         tracer = fit.tracer_linear_light_profiles_to_light_profiles
 
-        try:
-            total_lens_flux = np.sum(tracer.galaxies[0].image_2d_from(grid=self.dataset.grids.lp))
-        except AttributeError:
-            total_lens_flux = jnp.nan
+        magzero = self.kwargs.get("magzero", None)
+
+        if magzero is None:
+            raise ValueError(
+                "MAGZERO must be provided in analysis kwargs to compute latent variables."
+            )
+
+        # LENS LIGHT FLUX IN MICROJANSKY, INCLUDING APERTURE FLUXES
 
         try:
-            source_plane_grid = tracer.traced_grid_2d_list_from(grid=self.dataset.grids.lp)[-1]
-            total_lensed_source_flux = np.sum(tracer.galaxies[-1].image_2d_from(grid=source_plane_grid))
+
+            image = tracer.image_2d_from(grid=self.dataset.grids.lp, xp=xp)
+
+            total_lens_flux = xp.sum(image.array)
+            lens_ab_mag = ab_mag_via_flux_from(
+                flux=total_lens_flux, magzero=magzero, xp=xp
+            )
+            total_lens_flux_muJy = flux_mujy_via_ab_mag_from(ab_mag=lens_ab_mag, xp=xp)
+
+            image_native = xp.zeros(image.mask.shape, dtype=image.dtype)
+
+            if xp is np:
+
+                image_native[image.mask.slim_to_native_tuple] = image.array
+
+            else:
+
+                image_native = image_native.at[image.mask.slim_to_native_tuple].set(image.array)
+
+            flat_index = xp.argmax(image_native)
+            y, x = xp.unravel_index(flat_index, image_native.shape)
+
+            aperture_radii = [13, 26, 39, 52]  # pixels
+
+            total_lens_flux_aperture_list = [
+                aperture_flux_from(
+                    image_2d=image_native,
+                    centre=(y, x),
+                    radius_pixels=radius_pixels,
+                    xp=xp,
+                )
+                for radius_pixels in aperture_radii
+            ]
+
+            # convert each aperture flux to magnitude and µJy
+            total_lens_mag_aperture_list = [
+                ab_mag_via_flux_from(
+                    flux=total_lens_flux_aperture, magzero=magzero, xp=xp
+                )
+                for total_lens_flux_aperture in total_lens_flux_aperture_list
+            ]
+            total_lens_flux_muJy_aperture_list = [
+                flux_mujy_via_ab_mag_from(ab_mag=m, xp=xp)
+                for m in total_lens_mag_aperture_list
+            ]
+
         except AttributeError:
-            total_lensed_source_flux = jnp.nan
+            total_lens_flux_muJy = xp.nan
+            total_lens_flux_muJy_aperture_list = [xp.nan, xp.nan, xp.nan, xp.nan]
+
+        # LENSED SOURCE FLUX IN MICROJANSKY
 
         try:
-            total_source_flux = np.sum(tracer.galaxies[-1].image_2d_from(grid=self.dataset.grids.lp))
+
+            source_plane_grid = tracer.traced_grid_2d_list_from(
+                grid=self.dataset.grids.lp, xp=xp
+            )[-1]
+            lensed_source_image = tracer.galaxies[-1].image_2d_from(
+                grid=source_plane_grid, xp=xp
+            )
+            total_lensed_source_flux = xp.sum(lensed_source_image.array)
+            lensed_source_ab_mag = ab_mag_via_flux_from(
+                flux=total_lensed_source_flux, magzero=magzero, xp=xp
+            )
+            total_lensed_source_flux_muJy = flux_mujy_via_ab_mag_from(
+                ab_mag=lensed_source_ab_mag, xp=xp
+            )
+
         except AttributeError:
-            total_source_flux = jnp.nan
+            total_lensed_source_flux_muJy = xp.nan
 
-        return (total_lens_flux, total_lensed_source_flux, total_source_flux)
+        # SOURCE FLUX IN MICROJANSKY
 
+        try:
+            source_image = tracer.galaxies[-1].image_2d_from(
+                grid=self.dataset.grids.lp, xp=xp
+            )
+            total_source_flux = xp.sum(source_image.array)
+            source_ab_mag = ab_mag_via_flux_from(
+                flux=total_source_flux, magzero=magzero, xp=xp
+            )
+            total_source_flux_muJy = flux_mujy_via_ab_mag_from(
+                ab_mag=source_ab_mag, xp=xp
+            )
 
-def dataset_instrument_hdu_dict_via_fits_from(
-    dataset_path, dataset_fits_name, image_tag: str = "_FLUX"
-):
-    """
-    Load a dictionary mapping dataset instruments (e.g. DES_g, NIR_Y) to their index in a multi-extension
-    fits file.
+        except AttributeError:
+            total_source_flux_muJy = xp.nan
 
-    Parameters
-    ----------
-    dataset_path
-        The path where the multi-extension fits file is stored.
-    dataset_fits_name
-        The name of the multi-extension fits file.
-    image_tag
-        The tag appended to the instrument name of the image HDU, e.g. _FLUX, _IMAGE, which is used to pick
-        out the image HDUs from the fits file and ignore other HDUs like noise maps or PSFs.
+        # MAGNIFICATION
 
-    Returns
-    -------
-    A dictionary mapping dataset names to their index in the fits file.
-    """
-    hdu_list = fits.open(dataset_path / dataset_fits_name)
+        try:
+            magnification = total_lensed_source_flux / total_source_flux
+        except AttributeError:
+            magnification = xp.nan
 
-    # Build dictionary: {name: index}
-    hdu_dict = {}
-    for i, hdu in enumerate(hdu_list):
-        name = hdu.name if hdu.name else ("PRIMARY" if i == 0 else f"UNNAMED_{i}")
-        hdu_dict[name] = i
+        # EFFECTIVE EINSTEIN RADIUS
 
-    instrument_dict = {}
-    counter = 0
+        # try:
+        #     effective_einstein_radius = tracer.einstein_radius_from(
+        #         grid=self.dataset.grids.lp
+        #     )
+        # except Exception:
+        #     effective_einstein_radius = xp.nan
 
-    for hdu in hdu_list:
-        name = hdu.name
-        if name.endswith(image_tag):
-            band = name.replace(image_tag, "").lower()
-            instrument_dict[band] = counter
-            counter += 1
-
-    return instrument_dict
+        return (
+            total_lens_flux_muJy,
+            total_lens_flux_muJy_aperture_list[0],
+            total_lens_flux_muJy_aperture_list[1],
+            total_lens_flux_muJy_aperture_list[2],
+            total_lens_flux_muJy_aperture_list[3],
+            total_lensed_source_flux_muJy,
+            total_source_flux_muJy,
+            magnification,
+        #    effective_einstein_radius
+        )

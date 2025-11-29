@@ -15,224 +15,14 @@ A full description of MGE can be found at the following link:
 https://github.com/Jammy2211/autolens_workspace/blob/release/notebooks/features/multi_gaussian_expansion.ipynb
 """
 
-
-def fit(
-    dataset_name: str,
-    mask_radius: float = 3.0,
-    iterations_per_quick_update: int = 5000,
-):
-
-    import util
-    import json
-    import numpy as np
-    from pathlib import Path
-
-    import autofit as af
-    import autolens as al
-
-    """
-    __Dataset__
-
-    Define the dataset path, assumed to follow:
-
-        dataset/<dataset_name>/<dataset_name>.fits
-
-    That is, the dataset lives in a subfolder named after it, and the main FITS file shares the same name.
-    """
-
-    dataset_main_path = Path("dataset") / dataset_name
-    dataset_fits_name = f"{dataset_name}.fits"
-
-    """
-    __Dataset Wavebands__
-
-    The following dictionary gives the names of the wavebands we are going to fit and maps them to their
-    hdu in the FITS file. 
-
-    It is created by inspecing the .fits headers of every hdu and extracting the waveband name from the header,
-    mapping it to the HDU index.
-
-    In this pipeline, we fit the VIS waveband, which is the highest quality data and therefore best suited to
-    initializing a robust lens model.
-    """
-    dataset_index_dict = util.dataset_instrument_hdu_dict_via_fits_from(
-        dataset_path=dataset_main_path, dataset_fits_name=dataset_fits_name
-    )
-
-    dataset_waveband = "vis"
-
-    vis_index = dataset_index_dict[dataset_waveband]
-
-    dataset = al.Imaging.from_fits(
-        data_path=dataset_main_path / dataset_fits_name,
-        data_hdu=vis_index * 3 + 1,
-        noise_map_path=dataset_main_path / dataset_fits_name,
-        noise_map_hdu=vis_index * 3 + 3,
-        psf_path=dataset_main_path / dataset_fits_name,
-        psf_hdu=vis_index * 3 + 2,
-        pixel_scales=0.1,
-        check_noise_map=False,
-    )
-
-    dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
-        region=(-0.3, 0.3, -0.3, 0.3), box_size=2
-    )
-
-    try:
-        with open(dataset_main_path / "info.json") as json_file:
-            info = json.load(json_file)
-            json_file.close()
-    except FileNotFoundError:
-        info = {}
-
-    try:
-        header = al.header_obj_from(
-            file_path=dataset_main_path / dataset_fits_name,
-            hdu=vis_index * 3 + 1,
-        )
-        zero_point = header["MAGZERO"]
-    except FileNotFoundError:
-        zero_point = None
-
-    try:
-        mask_extra_galaxies = al.Mask2D.from_fits(
-            file_path=dataset_main_path / "mask_extra_galaxies.fits",
-            pixel_scales=0.1,
-            invert=True,
-        )
-
-        dataset = dataset.apply_noise_scaling(mask=mask_extra_galaxies)
-    except FileNotFoundError:
-        pass
-
-    if mask_radius is None:
-        mask_radius = info.get("mask_radius") or 3.0
-    mask_centre = info.get("mask_centre") or (0.0, 0.0)
-
-    mask = al.Mask2D.circular(
-        shape_native=dataset.shape_native,
-        pixel_scales=dataset.pixel_scales,
-        radius=mask_radius,
-        centre=mask_centre,
-    )
-
-    dataset = dataset.apply_mask(mask=mask)
-
-    over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
-        grid=dataset.grid,
-        sub_size_list=[4, 2, 1],
-        radial_list=[0.1, 0.3],
-        centre_list=[dataset_centre],
-    )
-
-    dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
-
-    """
-    __Positions__
-    """
-    try:
-        positions = al.Grid2DIrregular(
-            values=al.from_json(file_path=dataset_main_path / "positions.json")
-        )
-        positions_likelihood_list = [al.PositionsLH(threshold=0.1, positions=positions)]
-    except FileNotFoundError:
-        positions_likelihood_list = None
-
-    """
-    __Settings AutoFit__
-
-    The settings of autofit, which controls the output paths, parallelization, database use, etc.
-    """
-    dataset_waveband = "vis"
-
-    settings_search = af.SettingsSearch(
-        path_prefix=Path("mge_lens_model") / dataset_name,
-        unique_tag=dataset_waveband,
-        info={"zero_point": zero_point},
-        session=None,
-    )
-
-    """
-    __Redshifts__
-
-    The redshifts of the lens and source galaxies.
-    """
-    redshift_lens = 0.5
-    redshift_source = 1.0
-
-    """
-    __Model: MGE Lens Model__
-
-    This pipeline fits the lens and source galaxy light together with the lens mass distribution:
-
-     - The lens light is represented by 2 sets of 30 Gaussians (60 total) [6 non-linear parameters].  
-       Each Gaussian’s intensity is solved via linear inversion [60 linear parameters].  
-
-     - The source light is represented by 1 set of 20 Gaussians with [4 non-linear parameters].  
-       Each Gaussian’s intensity is solved via linear inversion [20 linear parameters].  
-
-     - The lens mass is modeled as an Isothermal Ellipsoid (SIE) with an External Shear [7 non-linear parameters].
-
-    Overall the model has 17 non-linear parameters, while most parameters are linear and solved efficiently at every 
-    likelihood evaluation. This keeps the parameter space low-dimensional and well-conditioned, enabling efficient 
-    sampling with a high probability of finding the global maximum.  
-    """
-    analysis = util.AnalysisImaging(
-        dataset=dataset,
-        positions_likelihood_list=positions_likelihood_list,
-        dataset_main_path=dataset_main_path,
-    )
-
-    # Lens:
-
-    lens_bulge = al.model_util.mge_model_from(
-        mask_radius=mask_radius,
-        total_gaussians=20,
-        centre_prior_is_uniform=True,
-        centre=dataset_centre,
-    )
-
-    mass = af.Model(al.mp.Isothermal)
-
-    mass.centre.centre_0 =  af.UniformPrior(
-        lower_limit=dataset_centre[0] - 0.05, upper_limit=dataset_centre[0] + 0.05
-    )
-    mass.centre.centre_1 =  af.UniformPrior(
-        lower_limit=dataset_centre[1] - 0.05, upper_limit=dataset_centre[1] + 0.05
-    )
-
-    shear = af.Model(al.mp.ExternalShear)
-
-    lens = af.Model(
-        al.Galaxy, redshift=redshift_lens, bulge=lens_bulge, mass=mass, shear=shear
-    )
-
-    # Source:
-
-    source_bulge = al.model_util.mge_model_from(
-        mask_radius=mask_radius, total_gaussians=20, centre_prior_is_uniform=False
-    )
-
-    source = af.Model(al.Galaxy, redshift=redshift_source, bulge=source_bulge)
-
-    # Overall Lens Model:
-
-    model = af.Collection(galaxies=af.Collection(lens=lens, source=source))
-
-    search = af.Nautilus(
-        name="mge_lens_model",
-        **settings_search.search_dict,
-        n_live=100,
-        batch_size=50,
-        iterations_per_quick_update=iterations_per_quick_update,
-    )
-
-    return search.fit(model=model, analysis=analysis, **settings_search.fit_dict)
+from start_here import fit
 
 
 def fit_waveband(
     dataset_name: str,
+    unique_tag,
     vis_result,
+    use_sersic_over_sampling: bool = False,
     mask_radius: float = 3.0,
     iterations_per_quick_update: int = 5000,
 ):
@@ -246,6 +36,7 @@ def fit_waveband(
     This script is therefore a demonstration of how to fit multi-wavelength data using the SLaM pipelines.
     """
 
+    import numpy as np
     import util
     import json
     from pathlib import Path
@@ -290,7 +81,9 @@ def fit_waveband(
     if this is not true this will need to be updated.
     """
     dataset_index_dict = util.dataset_instrument_hdu_dict_via_fits_from(
-        dataset_path=dataset_main_path, dataset_fits_name=dataset_fits_name
+        dataset_path=dataset_main_path,
+        dataset_fits_name=dataset_fits_name,
+        image_tag="_BGSUB",  # Depends on how Euclid cutout was made
     )
 
     """
@@ -345,9 +138,9 @@ def fit_waveband(
                 file_path=dataset_main_path / dataset_fits_name,
                 hdu=dataset_index * 3 + 1,
             )
-            zero_point = header["MAGZERO"]
+            magzero = header["MAGZERO"]
         except FileNotFoundError:
-            zero_point = None
+            magzero = None
 
         try:
             mask_extra_galaxies = al.Mask2D.from_fits(
@@ -375,22 +168,63 @@ def fit_waveband(
 
         dataset = dataset.apply_mask(mask=mask)
 
-        over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
-            grid=dataset.grid,
-            sub_size_list=[4, 2, 1],
-            radial_list=[0.1, 0.3],
-            centre_list=[dataset_centre],
-        )
+        if not use_sersic_over_sampling:
 
-        dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
+            over_sample_size = (
+                al.util.over_sample.over_sample_size_via_radial_bins_from(
+                    grid=dataset.grid,
+                    sub_size_list=[4, 2, 1],
+                    radial_list=[0.1, 0.3],
+                    centre_list=[dataset_centre],
+                )
+            )
+
+            dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
+
+        else:
+
+            tracer = vis_result.max_log_likelihood_tracer
+
+            traced_grid = tracer.traced_grid_2d_list_from(
+                grid=dataset.grid,
+            )[-1]
+
+            source_centre = tracer.galaxies[1].bulge.centre
+
+            over_sample_size = (
+                al.util.over_sample.over_sample_size_via_radial_bins_from(
+                    grid=traced_grid,
+                    sub_size_list=[16, 4, 2],
+                    radial_list=[0.1, 0.3],
+                    centre_list=[source_centre],
+                )
+            )
+
+            over_sample_size_lens = (
+                al.util.over_sample.over_sample_size_via_radial_bins_from(
+                    grid=dataset.grid,
+                    sub_size_list=[16, 4, 1],
+                    radial_list=[0.1, 0.3],
+                    centre_list=[dataset_centre],
+                )
+            )
+
+            over_sample_size = np.where(
+                over_sample_size > over_sample_size_lens,
+                over_sample_size,
+                over_sample_size_lens,
+            )
+            over_sample_size = al.Array2D(values=over_sample_size, mask=mask)
+
+            dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
         """
         __Settings AutoFit__
         """
         settings_search = af.SettingsSearch(
-            path_prefix=Path("mge_lens_model") / dataset_name,
-            unique_tag=dataset_waveband,
-            info={"zero_point": zero_point},
+            path_prefix=Path(dataset_name),
+            unique_tag=unique_tag,
+            info={"magzero": magzero},
             session=None,
         )
 
@@ -411,7 +245,11 @@ def fit_waveband(
         """
         analysis = util.AnalysisImaging(
             dataset=dataset,
+            use_jax=True,
+            title_prefix=dataset_waveband.upper(),
+            **settings_search.info,
             dataset_main_path=dataset_main_path,
+            skip_rgb_plot=True,
         )
 
         """
@@ -457,7 +295,7 @@ def fit_waveband(
         __Search__
         """
         search = af.Nautilus(
-            name="mge_lens_model",
+            name=dataset_waveband,  # The name of the fit and folder results are output to.
             **settings_search.search_dict,
             n_live=75,
             batch_size=50,
@@ -517,6 +355,7 @@ if __name__ == "__main__":
 
     fit_waveband(
         dataset_name=args.dataset,
+        unique_tag="initial_lens_model",
         vis_result=vis_result,
         mask_radius=mask_radius,
         iterations_per_quick_update=iterations_per_quick_update,

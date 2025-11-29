@@ -8,6 +8,7 @@ containing the lens, image-plane lensed source and delensed source-plane source 
 The .csv workflow API is described in `workflow/csv_make.py` and you should read that tutorial first in full
 before reading this example, as the same API is used here.
 """
+
 # %matplotlib inline
 # from pyprojroot import here
 # workspace_path = str(here())
@@ -137,13 +138,18 @@ agg_csv.add_variable(
 """
 __Magnification__
 """
+
+
 def magnification_from(result):
 
     latent_summary = result.latent_summary
 
     kwargs = latent_summary.median_pdf_sample.kwargs
 
-    return kwargs[("latent", "total_lensed_source_flux")] / kwargs[("latent", "total_source_flux")]
+    return (
+        kwargs[("latent", "total_lensed_source_flux")]
+        / kwargs[("latent", "total_source_flux")]
+    )
 
 
 agg_csv.add_computed_column(

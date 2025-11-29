@@ -58,14 +58,14 @@ the lens model improve over time!
 Overview
 --------
 
-The main Euclid strong lens modeling pipeline is found in the ``start_here.py`` script, which is the script you run
-to perform the lens modeling.
+The starting point for Euclid strong lens modeling is found in the ``start_here.py`` script. It performs
+automated lens modeling in around 10 minutes per lens on a GPU, around 20 minutes on an 8 core CPU.
 
 This script can be run as a black-box, with key output being generated, including:
 
 - A SIE plus shear lens mass model.
 - Deblended images of the lens and source galaxies.
-- A pixelized source reconstruction.
+- Lens light and source models using a multi Gaussian Expansion.
 
 Here is an example of the output, which shows the lens and source galaxies debelended and a source reconstruction
 in the source-plane:
@@ -77,38 +77,36 @@ If key output for your science case is not generated, please contact James Night
 SLACK so it can be added to the pipeline and become a standard output of the Euclid strong lens modeling pipeline
 and therefore data release.
 
+Workflow
+--------
+
+After running the ``start_here.py`` script on many lenses, you will begin to build up a large number of results
+in the ``output`` folder. Eventually, manually inspecting these results will become tedious, and you will require an
+efficient workflow to inspect the results and perform scientific analysis.
+
+The ``workflow`` folder contains example scripts for creating workflows which enable efficient inspection of
+large lens modeling results. Workflows are designed by creating .png, .csv and .fits files from the results
+in the ``output`` folder for fast inspection.
+
 Additional Pipelines
 --------------------
 
-The following additional pipelines are available in the repository:
+The following additional pipelines are available in the repository in the ``pipelines`` folder:
 
-- ``mge_lens_model.py``: Perform a fast Multi-Gaussian Expansion (MGE) lens modeling for the lens light and source, to get a fast (< 10 minutes on GPU) lens model.
-- ``mge_lens_only.py``: Perform a fast Multi-Gaussian Expansion (MGE) subtraction of the lens light, in order to better visualize the lensed source.
-- ``group.py``: Lens modeling of group-scale lenses which have extra nearby galaxies whose light and mass must be modeled.
-- ``multi_wavelength.py``: After modeling the high resolution VIS imaging, model lower resolution NIR / EXT imaging using a fixed lens model.
-- ``point_source.py``: Model the lensed source as a point source, for example if its a strongly lensed quasar.
+- ``full_model.py``: A full pipeline which models the Source, Light and Mass using advanced featues like a pixelized source reconstruction and mass model more complex than SIE + shear.
+- ``lens_model_waveband.py``: After modeling the high resolution VIS imaging, model lower resolution NIR / EXT imaging using a fixed lens model.
+- ``sersic_lens_model.py``: After getting an initial lens model from VIS imaging, perform fits using Sersic lens and source models which give more accurate photometry for SED fitting.
+- ``mge_lens_only.py``: Multi-Gaussian Expansion (MGE) subtraction of the lens light only, which better reveals the lensed source.
 
-All pipelines are run with the same API as the `start_here.py` script, for example:
-
-.. code-block:: bash
-
-    python pipelines/mge_lens_model.py --dataset=EUCLJ174517.55+655612.5 --mask_radius=3.0 --iterations_per_quick_update=50000
+All pipelines are run with the same API as the ``start_here.py`` script, for example:
 
 .. code-block:: bash
 
-    python pipelines/mge_lens_only.py --dataset=EUCLJ174517.55+655612.5 --mask_radius=3.0 --iterations_per_quick_update=50000
+    python pipelines/full_model.py --dataset=EUCLJ174517.55+655612.5 --mask_radius=3.0 --iterations_per_quick_update=50000
 
-.. code-block:: bash
-
-    python pipelines/groups.py --dataset=group --mask_radius=3.0 --iterations_per_quick_update=50000
-
-.. code-block:: bash
-
-    python pipelines/multi_wavelength.py --dataset=EUCLJ174517.55+655612.5 --mask_radius=3.0 --iterations_per_quick_update=50000
-
-.. code-block:: bash
-
-    python pipelines/point_source.py --dataset=point_example --iterations_per_quick_update=10000
+**PyAutoLens** has automated pipelines for modeling group-scale strong lenses, lensed point sources (e.g. lensed quasars)
+and double source plane lenses. These will be added to this repository in future releases, but if you are interested
+in using these pipelines sooner please contact James Nightingale on the Euclid consortium SLACK.
 
 Documentation
 -------------

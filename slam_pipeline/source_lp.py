@@ -1,8 +1,6 @@
 import autofit as af
 import autolens as al
 
-from . import slam_util
-
 from typing import Union, Optional, Tuple
 
 
@@ -109,6 +107,8 @@ def run(
         name="source_lp[1]",
         **settings_search.search_dict,
         n_live=200,
+        n_batch=50,
+        n_like_max=200000
     )
 
     result = search.fit(model=model, analysis=analysis, **settings_search.fit_dict)

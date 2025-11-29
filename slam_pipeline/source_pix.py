@@ -1,8 +1,6 @@
 import autofit as af
 import autolens as al
 
-from . import slam_util
-
 from typing import Optional, Tuple, Union
 
 
@@ -10,9 +8,7 @@ def run_1(
     settings_search: af.SettingsSearch,
     analysis: Union[al.AnalysisImaging, al.AnalysisInterferometer],
     source_lp_result: af.Result,
-    image_mesh_init: af.Model(al.AbstractImageMesh) = af.Model(al.image_mesh.Overlay),
     mesh_init: af.Model(al.AbstractMesh) = af.Model(al.mesh.Delaunay),
-    image_mesh_init_shape: Tuple[int, int] = (34, 34),
     regularization_init: af.Model(al.AbstractRegularization) = af.Model(
         al.reg.AdaptiveBrightnessSplit
     ),
@@ -41,12 +37,6 @@ def run_1(
         The analysis class which includes the `log_likelihood_function` and can be customized for the SLaM model-fit.
     source_lp_result
         The results of the SLaM SOURCE LP PIPELINE which ran before this pipeline.
-    image_mesh_init
-        The image mesh, which defines how the mesh centres are computed in the image-plane, used by the pixelization
-        in the first search which initializes the source.
-    image_mesh_init_shape
-        The shape (e.g. resolution) of the image-mesh used in the initialization search (`search[1]`). This is only
-        used if the image-mesh has a `shape` parameter (e.g. `Overlay`).
     mesh_init
         The mesh, which defines how the source is reconstruction in the source-plane, used by the pixelization
         in the first search which initializes the source.
@@ -71,7 +61,7 @@ def run_1(
 
     - The lens galaxy light is modeled using light profiles [parameters fixed to result of SOURCE LP PIPELINE].
 
-     - The lens galaxy mass is modeled using a total mass distribution [parameters initialized from the results of the 
+     - The lens galaxy mass is modeled using a total mass distribution [model initialized from the results of the 
      SOURCE LP PIPELINE].
 
      - The source galaxy's light is the input initialization image mesh, mesh and regularization scheme [parameters of 
@@ -95,9 +85,6 @@ def run_1(
         mass = source_lp_result.instance.galaxies.lens.mass
         shear = source_lp_result.instance.galaxies.lens.shear
 
-    if image_mesh_init is not None:
-        image_mesh_init.shape = image_mesh_init_shape
-
     model = af.Collection(
         galaxies=af.Collection(
             lens=af.Model(
@@ -114,7 +101,6 @@ def run_1(
                 redshift=source_lp_result.instance.galaxies.source.redshift,
                 pixelization=af.Model(
                     al.Pixelization,
-                    image_mesh=image_mesh_init,
                     mesh=mesh_init,
                     regularization=regularization_init,
                 ),
@@ -128,6 +114,7 @@ def run_1(
         name="source_pix[1]",
         **settings_search.search_dict,
         n_live=150,
+        n_batch=30,
     )
 
     result = search.fit(model=model, analysis=analysis, **settings_search.fit_dict)
@@ -140,12 +127,10 @@ def run_2(
     analysis: Union[al.AnalysisImaging, al.AnalysisInterferometer],
     source_lp_result: af.Result,
     source_pix_result_1: af.Result,
-    image_mesh: af.Model(al.AbstractImageMesh) = af.Model(al.image_mesh.Hilbert),
     mesh: af.Model(al.AbstractMesh) = af.Model(al.mesh.Delaunay),
     regularization: af.Model(al.AbstractRegularization) = af.Model(
         al.reg.AdaptiveBrightnessSplit
     ),
-    image_mesh_pixels_fixed: Optional[int] = 1000,
     dataset_model: Optional[af.Model] = None,
 ) -> af.Result:
     """
@@ -166,18 +151,12 @@ def run_2(
         The analysis class which includes the `log_likelihood_function` and can be customized for the SLaM model-fit.
     source_lp_result
         The results of the SLaM SOURCE LP PIPELINE which ran before this pipeline.
-    image_mesh
-        The image mesh, which defines how the mesh centres are computed in the image-plane, used by the pixelization
-        in the final search which improves the source adaption.
     mesh
         The mesh, which defines how the source is reconstruction in the source-plane, used by the pixelization
         in the final search which improves the source adaption.
     regularization
         The regularization, which places a smoothness prior on the source reconstruction, used by the pixelization
         in the final search which improves the source adaption.
-    image_mesh_pixels_fixed
-        The fixed number of pixels in the image-mesh, if an image-mesh with an input number of pixels is used
-        (e.g. `Hilbert`).
     extra_galaxies
         Additional extra galaxies containing light and mass profiles, which model nearby line of sight galaxies.
     dataset_model
@@ -212,7 +191,6 @@ def run_2(
                 redshift=source_lp_result.instance.galaxies.source.redshift,
                 pixelization=af.Model(
                     al.Pixelization,
-                    image_mesh=image_mesh,
                     mesh=mesh,
                     regularization=regularization,
                 ),
@@ -222,34 +200,11 @@ def run_2(
         dataset_model=dataset_model,
     )
 
-    if image_mesh_pixels_fixed is not None:
-        if hasattr(model.galaxies.source.pixelization.image_mesh, "pixels"):
-            model.galaxies.source.pixelization.image_mesh.pixels = (
-                image_mesh_pixels_fixed
-            )
-
-    """
-    __Search (Search 2)__
-
-    This search uses the nested sampling algorithm Dynesty, in contrast to nearly every other search throughout the
-    autolens workspace which use `Nautilus`.
-
-    The reason is quite technical, but in a nutshell it is because the likelihood function sampled in `source_pix[2]`
-    is often not smooth. This leads to behaviour where the `Nautilus` search gets stuck sampling small regions of
-    parameter space indefinitely, and does not converge and terminate.
-
-    Dynesty has proven more robust to these issues, because it uses a random walk nested sampling algorithm which
-    is less susceptible to a noisy likelihood function.
-
-    The reason this likelihood function is noisy is because it has parameters which change the distribution of source
-    pixels. For example, the parameters may mean more or less source pixels cluster over the brightest regions of the
-    image. In all other searches, the source pixelization parameters are fixed, ensuring that the likelihood function
-    is smooth.
-    """
-    search = af.DynestyStatic(
+    search = af.Nautilus(
         name="source_pix[2]",
         **settings_search.search_dict,
-        nlive=100,
+        n_live=75,
+        n_batch=30,
     )
 
     result = search.fit(model=model, analysis=analysis, **settings_search.fit_dict)

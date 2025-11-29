@@ -11,6 +11,7 @@ source plane image.
 The .png workflow API is described in `workflow/png_make.py` and you should read that tutorial first in full
 before reading this example, as the same API is used here.
 """
+
 # %matplotlib inline
 # from pyprojroot import here
 # workspace_path = str(here())
@@ -101,22 +102,19 @@ subplots = [
     al.agg.subplot_fit.lens_light_subtracted_image,
     al.agg.subplot_fit.source_model_image,
     al.agg.subplot_fit.source_plane_image_zoom,
-    al.agg.subplot_fit.source_plane_image
+    al.agg.subplot_fit.source_plane_image,
 ]
 
-image = agg_image.extract_image(
-    subplots=subplots
-)
+image = agg_image.extract_image(subplots=subplots)
 
 image.save(Path("workflow") / "png" / "0_master_image.png")
 
 agg_image.output_to_folder(
     folder=Path("workflow") / "png",
     name=[search.path_prefix.parts[-1] for search in agg.values("search")],
-    subplots=subplots
+    subplots=subplots,
 )
 
 """
 Finished.
 """
-

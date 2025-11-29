@@ -103,9 +103,9 @@ def fit(
             file_path=dataset_main_path / dataset_fits_name,
             hdu=vis_index * 3 + 1,
         )
-        zero_point = header["MAGZERO"]
+        magzero = header["MAGZERO"]
     except FileNotFoundError:
-        zero_point = None
+        magzero = None
 
     try:
         mask_extra_galaxies = al.Mask2D.from_fits(
@@ -146,9 +146,9 @@ def fit(
     The settings of autofit, which controls the output paths, parallelization, database use, etc.
     """
     settings_search = af.SettingsSearch(
-        path_prefix=Path("mge_lens_only") / dataset_name,
-        unique_tag=dataset_waveband,
-        info={"zero_point": zero_point},
+        path_prefix=Path(dataset_name),
+        unique_tag="mge_lens_only",
+        info={"magzero": magzero},
         session=None,
     )
 
@@ -174,6 +174,9 @@ def fit(
 
     analysis = util.AnalysisImaging(
         dataset=dataset,
+        use_jax=True,
+        title_prefix=dataset_waveband.upper(),
+        **settings_search.info,
         dataset_main_path=dataset_main_path,
     )
 
@@ -186,7 +189,6 @@ def fit(
         centre=dataset_centre,
     )
 
-
     model = af.Collection(
         galaxies=af.Collection(
             lens=af.Model(
@@ -198,7 +200,7 @@ def fit(
     )
 
     search = af.Nautilus(
-        name="mge_lens_only",
+        name=dataset_waveband,  # The name of the fit and folder results are output to.
         **settings_search.search_dict,
         n_live=75,
         batch_size=50,
@@ -323,9 +325,9 @@ def fit_waveband(
                 file_path=dataset_main_path / dataset_fits_name,
                 hdu=dataset_index * 3 + 1,
             )
-            zero_point = header["MAGZERO"]
+            magzero = header["MAGZERO"]
         except FileNotFoundError:
-            zero_point = None
+            magzero = None
 
         try:
             mask_extra_galaxies = al.Mask2D.from_fits(
@@ -366,9 +368,9 @@ def fit_waveband(
         __Settings AutoFit__
         """
         settings_search = af.SettingsSearch(
-            path_prefix=Path("mge_lens_only") / dataset_name,
-            unique_tag=dataset_waveband,
-            info={"zero_point": zero_point},
+            path_prefix=Path(dataset_name),
+            unique_tag="mge_lens_only",
+            info={"magzero": magzero},
             session=None,
         )
 
@@ -389,6 +391,9 @@ def fit_waveband(
         """
         analysis = util.AnalysisImaging(
             dataset=dataset,
+            use_jax=True,
+            title_prefix=dataset_waveband.upper(),
+            **settings_search.info,
             dataset_main_path=dataset_main_path,
         )
 
@@ -428,7 +433,7 @@ def fit_waveband(
         __Search__
         """
         search = af.Nautilus(
-            name="mge_lens_only",
+            name=dataset_waveband,  # The name of the fit and folder results are output to.
             **settings_search.search_dict,
             n_live=75,
             batch_size=50,
