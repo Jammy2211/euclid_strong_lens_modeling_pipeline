@@ -149,6 +149,29 @@ def fit(
         magzero = None
 
     """
+    __WCS__
+    
+    The World Coordinate System (WCS) provides a standard framework for converting between pixel coordinates in image 
+    data and sky coordinates (e.g. right ascension and declination). Because WCS uses a unified coordinate convention 
+    adopted by all major telescopes and instruments, it enables results derived from one dataset to be compared 
+    directly with, or followed up by, observations from other facilities.
+    
+    The image header contains the metadata required to map pixel coordinates to sky coordinates via the 
+    WCS transformation. This metadata is configured below.
+    
+    WCS information is propagated through the lens-modeling pipeline so that inferred quantities—such as the centre 
+    of the lens light model—can be converted from AutoLens arcsecond-based coordinates into absolute sky coordinates 
+    once modeling is complete. The lens model is also used to determine the sky coordinates of each multiple image of
+    the lensed source.
+    
+    All WCS information is written to the lens `output` directory as `wcs.json` and can be further inspected or 
+    manipulated using the catalogue-generation tools provided in the `workflow` module.
+    """
+    from astropy.wcs import WCS
+
+    pixel_wcs = WCS(header).celestial
+
+    """
     __Extra Galaxy Removal__
     
     There may be regions of an image that have signal near the lens and source that is from other galaxies not associated
@@ -232,6 +255,50 @@ def fit(
         positions_likelihood_list = None
 
     """
+    __Lowest Resolution PSF__
+
+    To perform aperture photometry for photometric redshift estimation, all imaging must be
+    matched to the lowest-resolution PSF across the MER bands for a given strong lens.
+
+    The strong-lens FITS cutout pipeline stores in its header the name of the worst band,
+    for example "DES_G". The code below finds this header entry, extracts the name of 
+    the worst band, and loads the PSF for this band from the .fits file. This PSF is 
+    passed to the `AnalysisImaging` object. 
+
+    To perform aperture photometry, the images of the lens and source are convolved with 
+    this PSF. The flux within circular apertures is then comupted. The radius of these
+    apertures is set as mutiples of the FWHM of the worst-seeing PSF loaded. This is also
+    stored in the .fits header, loaded, and passed to the `AnalysisImaging` object. 
+
+    The fluxes computed after lens modeling via aperture photometry are in microJanskys and are suitable 
+    for direct input into an SED fitting code. This uses lens models sampled from the posterior 
+    distribution and output as latent variables. As a result, the fluxes provided to the SED fitting code
+    fully propagate uncertainties in the lens model.
+    """
+    header_primary = al.header_obj_from(
+        file_path=dataset_main_path / dataset_fits_name,
+        hdu=0,
+    )
+
+    lowest_resolution_waveband = header_primary.get("WORST_BAND", None).lower()
+
+    lowest_resolution_waveband_index = dataset_index_dict.get(lowest_resolution_waveband, None)
+
+    psf_lowest_resolution = al.Kernel2D.from_fits(
+        file_path=dataset_main_path / dataset_fits_name,
+        hdu=lowest_resolution_waveband_index * 3 + 2,
+        pixel_scales=0.1,
+        normalize=True
+    )
+
+    # Use OU-MER worst PSF FWHM if available, but if its -99 meaning the OU-MER pipeline failed used a
+    # fall back value computed during lens cutout creation.
+    psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_MER", None))
+
+    if psf_lowest_resolution_fwhm is None or psf_lowest_resolution_fwhm < -98:
+        psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_FWHM", None))
+
+    """
     __Settings AutoFit__
 
     The settings of autofit, which controls the output paths, parallelization, database use, etc.
@@ -282,6 +349,7 @@ def fit(
     lens_bulge = al.model_util.mge_model_from(
         mask_radius=mask_radius,
         total_gaussians=20,
+        gaussian_per_basis=2,
         centre_prior_is_uniform=True,
         centre=dataset_centre,
     )
@@ -332,6 +400,9 @@ def fit(
         dataset_main_path=dataset_main_path,
         title_prefix=dataset_waveband.upper(),
         plot_rgb=True,
+        psf_lowest_resolution=psf_lowest_resolution,
+        psf_lowest_resolution_fwhm=psf_lowest_resolution_fwhm,
+        pixel_wcs=pixel_wcs,
         **settings_search.info,
     )
 
@@ -339,7 +410,7 @@ def fit(
         name=dataset_waveband,  # The name of the fit and folder results are output to.
         **settings_search.search_dict,
         n_live=100,  # The number of Nautilus "live" points, increase for more complex models.
-        batch_size=50,  # For fast GPU fitting lens model fits are batched and run simultaneously.
+        batch_size=50,  # GPU lens model fits are batched and run simultaneously, see VRAM section below.
         iterations_per_quick_update=iterations_per_quick_update,  # Every N iterations the max likelihood model is visualized in the Jupter Notebook and output to hard-disk.
         n_like_max=100000,  # The maximum number of likelihood evaluations, models typically take < 30000 samples so this stops runaway fits.
     )

@@ -15,6 +15,7 @@ def run_1(
     extra_galaxies: Optional[af.Collection] = None,
     dataset_model: Optional[af.Model] = None,
     fixed_mass_model: bool = False,
+    n_batch: int = 20,
 ) -> af.Result:
     """
     The first SLaM SOURCE PIX PIPELINE, which initializes a lens model which uses a pixelized source for the source
@@ -114,7 +115,7 @@ def run_1(
         name="source_pix[1]",
         **settings_search.search_dict,
         n_live=150,
-        n_batch=30,
+        n_batch=n_batch,
     )
 
     result = search.fit(model=model, analysis=analysis, **settings_search.fit_dict)
@@ -132,6 +133,7 @@ def run_2(
         al.reg.AdaptiveBrightnessSplit
     ),
     dataset_model: Optional[af.Model] = None,
+    n_batch: int = 20,
 ) -> af.Result:
     """
     The second SLaM SOURCE PIX PIPELINE, which fits a fixed lens model which uses a pixelized source for the source
@@ -204,7 +206,7 @@ def run_2(
         name="source_pix[2]",
         **settings_search.search_dict,
         n_live=75,
-        n_batch=30,
+        n_batch=n_batch,
     )
 
     result = search.fit(model=model, analysis=analysis, **settings_search.fit_dict)

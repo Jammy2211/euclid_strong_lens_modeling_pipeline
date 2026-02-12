@@ -10,6 +10,7 @@ emcee:
   trajectories: true       # Output Emcee trajectories figure during a non-linear search fit?
 nautilus:
   cornerplot: true         # Output Nautilus cornerplot figure during a non-linear search fit?
+  corner_anesthetic: true   # Output corner figure (using anestetic) during a non-linear search fit?
 pyswarms:
   contour: true            # Output PySwarms contour figure during a non-linear search fit?
   cost_history: true       # Output PySwarms cost_history figure during a non-linear search fit?
@@ -24,3 +25,5 @@ zeus:
   likelihood_series: true  # Output Zeus likelihood series figure during a non-linear search fit?
   time_series: true        # Output Zeus time series figure during a non-linear search fit?
   trajectories: true       # Output Zeus trajectories figure during a non-linear search fit?
+nest:
+  corner_anesthetic: true   # Output corner figure (using anestetic) during a non-linear search fit?

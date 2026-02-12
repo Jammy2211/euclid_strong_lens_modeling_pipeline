@@ -112,6 +112,13 @@ def fit_sersic(
         magzero = None
 
     """
+    __WCS__
+    """
+    from astropy.wcs import WCS
+
+    pixel_wcs = WCS(header).celestial
+
+    """
     __Extra Galaxy Removal__
     """
     try:
@@ -178,6 +185,32 @@ def fit_sersic(
     over_sample_size = al.Array2D(values=over_sample_size, mask=mask)
 
     dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
+
+    """
+    __Lowest Resolution PSF__
+    """
+    header_primary = al.header_obj_from(
+        file_path=dataset_main_path / dataset_fits_name,
+        hdu=0,
+    )
+
+    lowest_resolution_waveband = header_primary.get("WORST_BAND", None).lower()
+
+    lowest_resolution_waveband_index = dataset_index_dict.get(lowest_resolution_waveband, None)
+
+    psf_lowest_resolution = al.Kernel2D.from_fits(
+        file_path=dataset_main_path / dataset_fits_name,
+        hdu=lowest_resolution_waveband_index * 3 + 2,
+        pixel_scales=0.1,
+        normalize=True
+    )
+
+    # Use OU-MER worst PSF FWHM if available, but if its -99 meaning the OU-MER pipeline failed used a
+    # fall back value computed during lens cutout creation.
+    psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_MER", None))
+
+    if psf_lowest_resolution_fwhm is None or psf_lowest_resolution_fwhm < -98:
+        psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_FWHM", None))
 
     """
     __Settings AutoFit__
@@ -255,6 +288,9 @@ def fit_sersic(
         dataset_main_path=dataset_main_path,
         use_jax=True,  # JAX will use GPUs for acceleration if available, else JAX will use multithreaded CPUs.
         title_prefix=dataset_waveband.upper(),
+        psf_lowest_resolution=psf_lowest_resolution,
+        psf_lowest_resolution_fwhm=psf_lowest_resolution_fwhm,
+        pixel_wcs=pixel_wcs,
         **settings_search.info,
     )
 
@@ -262,7 +298,7 @@ def fit_sersic(
         name=dataset_waveband,  # The name of the fit and folder results are output to.
         **settings_search.search_dict,
         n_live=100,  # The number of Nautilus "live" points, increase for more complex models.
-        batch_size=50,  # For fast GPU fitting lens model fits are batched and run simultaneously.
+        batch_size=50,  # GPU lens model fits are batched and run simultaneously, see VRAM section below.
         iterations_per_quick_update=iterations_per_quick_update,
         # Every N iterations the max likelihood model is visualized in the Jupter Notebook and output to hard-disk.
         n_like_max=100000,

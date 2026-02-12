@@ -46,10 +46,10 @@ Before reading this script, you should have familiarity with the following key c
 - **Non-linear Search Chaining:** This approach, demonstrated in `guides/modeling/chaining`, shows the power of
   linking models together in a sequence, such as transitioning from a light profile source to a pixelized source.
 
-- **Pixelizations:** These structures, explained in `features/pixelization`, allow for the reconstruction of the
+- **pixelizations:** These structures, explained in `features/pixelization`, allow for the reconstruction of the
   source galaxy on a pixel grid.
 
-- **Adaptive Pixelizations:** Described in `features/pixelization/adaptive`, these pixelizations
+- **Adaptive pixelizations:** Described in `features/pixelization/adaptive`, these pixelizations
   adapt to the unlensed morphology of the source.
 
 - **Multi Gaussian Expansions (MGE):** Introduced in `features/multi_gaussian_expansion.ipynb`, MGEs are employed to
@@ -257,6 +257,8 @@ def fit(
 
     dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
+    dataset = dataset.apply_sparse_operator()
+
     """
     __Positions__
     """
@@ -323,6 +325,7 @@ def fit(
     lens_bulge = al.model_util.mge_model_from(
         mask_radius=mask_radius,
         total_gaussians=20,
+        gaussian_per_basis=2,
         centre_prior_is_uniform=True,
         centre=dataset_centre,
     )
@@ -373,7 +376,7 @@ def fit(
     mesh_shape = (32, 32)
     total_mapper_pixels = mesh_shape[0] * mesh_shape[1]
 
-    total_linear_light_profiles = 20
+    total_linear_light_profiles = 40
 
     preloads = al.Preloads(
         mapper_indices=al.mapper_indices_from(
@@ -438,8 +441,9 @@ def fit(
         settings_search=settings_search,
         analysis=analysis,
         source_lp_result=source_lp_result,
-        mesh_init=af.Model(al.mesh.RectangularMagnification, shape=mesh_shape),
+        mesh_init=af.Model(al.mesh.RectangularAdaptDensity, shape=mesh_shape),
         regularization_init=af.Model(al.reg.AdaptiveBrightness),
+        n_batch=10,
     )
 
     """
@@ -483,8 +487,9 @@ def fit(
         analysis=analysis,
         source_lp_result=source_lp_result,
         source_pix_result_1=source_pix_result_1,
-        mesh=af.Model(al.mesh.RectangularSource, shape=mesh_shape),
+        mesh=af.Model(al.mesh.RectangularAdaptImage, shape=mesh_shape),
         regularization=af.Model(al.reg.AdaptiveBrightness),
+        n_batch=15,
     )
 
     """

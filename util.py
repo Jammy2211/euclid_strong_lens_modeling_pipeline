@@ -2,6 +2,8 @@ from astropy.io import fits
 import numpy as np
 from PIL import Image
 
+from autoconf.dictable import output_to_json
+
 import autofit as af
 import autolens as al
 import autolens.plot as aplt
@@ -200,8 +202,15 @@ class VisualizerImaging(al.VisualizerImaging):
         img0 = al.Array2DRGB(values=img0, mask=mask)
         img1 = al.Array2DRGB(values=img1, mask=mask)
 
-        img0_masked = al.Array2DRGB(values=img0, mask=dataset.mask)
-        img1_masked = al.Array2DRGB(values=img1, mask=dataset.mask)
+        mask_rgb = al.Mask2D.circular(
+            shape_native=(img0.shape[0], img0.shape[1]),
+            pixel_scales=dataset.pixel_scales,
+            radius=dataset.mask.circular_radius,
+            origin=dataset.mask.origin,
+        )
+
+        img0_masked = al.Array2DRGB(values=img0, mask=mask_rgb)
+        img1_masked = al.Array2DRGB(values=img1, mask=mask_rgb)
 
         mat_plot_2d = aplt.MatPlot2D(
             output=aplt.Output(
@@ -250,7 +259,7 @@ class AnalysisImaging(al.AnalysisImaging):
         "latent.total_lensed_source_flux",
         "latent.total_source_flux",
         "latent.magnification",
-    #    "latent_effective_einstein_radius"
+        #    "latent_effective_einstein_radius"
     ]
 
     def compute_latent_variables(self, parameters, model):
@@ -312,7 +321,7 @@ class AnalysisImaging(al.AnalysisImaging):
 
         try:
 
-            image = tracer.image_2d_from(grid=self.dataset.grids.lp, xp=xp)
+            image = fit.galaxy_image_dict[fit.tracer.galaxies[0]]
 
             total_lens_flux = xp.sum(image.array)
             lens_ab_mag = ab_mag_via_flux_from(
@@ -328,16 +337,29 @@ class AnalysisImaging(al.AnalysisImaging):
 
             else:
 
-                image_native = image_native.at[image.mask.slim_to_native_tuple].set(image.array)
+                image_native = image_native.at[image.mask.slim_to_native_tuple].set(
+                    image.array
+                )
 
             flat_index = xp.argmax(image_native)
             y, x = xp.unravel_index(flat_index, image_native.shape)
 
-            aperture_radii = [13, 26, 39, 52]  # pixels
+            psf_lowest_resolution = self.kwargs["psf_lowest_resolution"]
+            psf_lowest_resolution_fwhm = self.kwargs["psf_lowest_resolution_fwhm"]
+
+            image_convolved_to_lowest = psf_lowest_resolution.convolved_image_from(
+                image=image_native,
+                blurring_image=None,
+                xp=xp
+            )
+
+            aperture_multipliers = np.array([1.0, 2.0, 3.0, 4.0])
+
+            aperture_radii = [psf_lowest_resolution_fwhm * multiplier for multiplier in aperture_multipliers]
 
             total_lens_flux_aperture_list = [
                 aperture_flux_from(
-                    image_2d=image_native,
+                    image_2d=image_convolved_to_lowest.native,
                     centre=(y, x),
                     radius_pixels=radius_pixels,
                     xp=xp,
@@ -365,12 +387,8 @@ class AnalysisImaging(al.AnalysisImaging):
 
         try:
 
-            source_plane_grid = tracer.traced_grid_2d_list_from(
-                grid=self.dataset.grids.lp, xp=xp
-            )[-1]
-            lensed_source_image = tracer.galaxies[-1].image_2d_from(
-                grid=source_plane_grid, xp=xp
-            )
+            lensed_source_image = fit.galaxy_image_dict[fit.tracer.galaxies[-1]]
+
             total_lensed_source_flux = xp.sum(lensed_source_image.array)
             lensed_source_ab_mag = ab_mag_via_flux_from(
                 flux=total_lensed_source_flux, magzero=magzero, xp=xp
@@ -424,5 +442,60 @@ class AnalysisImaging(al.AnalysisImaging):
             total_lensed_source_flux_muJy,
             total_source_flux_muJy,
             magnification,
-        #    effective_einstein_radius
+            #    effective_einstein_radius
+        )
+
+    def save_results(self, paths: af.DirectoryPaths, result):
+        """
+        At the end of a model-fit, this routine saves attributes of the `Analysis` object to the `files`
+        folder such that they can be loaded after the analysis using PyAutoFit's database and aggregator tools.
+
+        For this analysis it outputs the following:
+
+        - The maximum log likelihood tracer of the fit.
+        - The World Coordinate System (WCS) information of the dataset, which is used to convert between pixel and
+          world coordinates.
+
+        Parameters
+        ----------
+        paths
+            The paths object which manages all paths, e.g. where the non-linear search outputs are stored,
+            visualization and the pickled objects used by the aggregator output by this function.
+        result
+            The result of a model fit, including the non-linear search, samples and maximum likelihood tracer.
+        """
+        super().save_results(paths=paths, result=result)
+
+        lens_light_centre = result.max_log_likelihood_tracer.galaxies[0].bulge.centre
+
+        lens_light_centre_wcs_pix = (
+            self.dataset.data.geometry.pixel_coordinates_wcs_2d_from(
+                scaled_coordinates_2d=lens_light_centre
+            )
+        )
+        lens_light_centre_wcs_pix_y = lens_light_centre_wcs_pix[0]
+        lens_light_centre_wcs_pix_x = lens_light_centre_wcs_pix[1]
+
+        pixel_wcs = self.kwargs["pixel_wcs"]
+
+        ra_c_deg, dec_c_deg = pixel_wcs.wcs_pix2world(
+            lens_light_centre_wcs_pix_x, lens_light_centre_wcs_pix_y, 1
+        )
+
+        data_centre_wcs_pix = self.dataset.data.geometry.pixel_coordinates_wcs_2d_from(
+            scaled_coordinates_2d=(0.0, 0.0)
+        )
+        data_centre_wcs_pix_y = data_centre_wcs_pix[0]
+        data_centre_wcs_pix_x = data_centre_wcs_pix[1]
+
+        wcs_dict = {
+            "crpix_x": data_centre_wcs_pix_x,
+            "crpix_y": data_centre_wcs_pix_y,
+            "crval_ra_deg": float(ra_c_deg),
+            "crval_dec_deg": float(dec_c_deg),
+        }
+
+        output_to_json(
+            obj=wcs_dict,
+            file_path=paths._files_path / "wcs.json",
         )

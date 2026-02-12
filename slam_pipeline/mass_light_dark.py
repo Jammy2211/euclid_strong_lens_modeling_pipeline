@@ -138,10 +138,7 @@ def run(
     )
 
     search = af.Nautilus(
-        name="mass_light_dark[1]",
-        **settings_search.search_dict,
-        n_live=250,
-        n_batch=30
+        name="mass_light_dark[1]", **settings_search.search_dict, n_live=250, n_batch=30
     )
 
     result = search.fit(model=model, analysis=analysis, **settings_search.fit_dict)

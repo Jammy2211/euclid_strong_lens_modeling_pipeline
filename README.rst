@@ -46,7 +46,7 @@ Run the pipeline with the example dataset:
 
 .. code-block:: bash
 
-    python start_here.py --dataset=EUCLJ174517.55+655612.5 --mask_radius=3.0 --iterations_per_quick_update=10000
+    python start_here.py --dataset=102018665_NEG570040238507752998 --mask_radius=3.0 --iterations_per_quick_update=10000
 
 The pipeline will run on the example dataset, outputting results to the ``output`` folder and in the ``dataset`` folder,
 and it can be easily modified to run on your own data.

@@ -3,7 +3,7 @@ Modeling Features: Multi Gaussian Expansion
 ===========================================
 
 A multi Gaussian expansion (MGE) decomposes the lens light into ~15-100 Gaussians, where the `intensity` of every
-Gaussian is solved for via a linear algebra using a process called an "inversion" (see the `light_parametric_linear.py`
+Gaussian is solved for via a linear algebra using a process called an "inversion" (see the `linear_light_profiles.py`
 feature for a full description of this).
 
 This script fits the MGE to a strong lens image, but does not fit the mass model or source light. Analysis of JWST
@@ -109,6 +109,9 @@ def fit_waveband(
 
     for i in range(len(dataset_index_dict.keys())):
 
+        """
+        __Dataset__
+        """
         dataset_waveband = list(dataset_index_dict.keys())[i]
         dataset_path = dataset_main_path
         dataset_fits_name = f"{dataset_name}.fits"
@@ -133,6 +136,19 @@ def fit_waveband(
             region=(-0.3, 0.3, -0.3, 0.3), box_size=2
         )
 
+        """
+        __Info__
+        """
+        try:
+            with open(dataset_main_path / "info.json") as json_file:
+                info = json.load(json_file)
+                json_file.close()
+        except FileNotFoundError:
+            info = {}
+
+        """
+        __Header__
+        """
         try:
             header = al.header_obj_from(
                 file_path=dataset_main_path / dataset_fits_name,
@@ -142,6 +158,16 @@ def fit_waveband(
         except FileNotFoundError:
             magzero = None
 
+        """
+        __WCS__
+        """
+        from astropy.wcs import WCS
+
+        pixel_wcs = WCS(header).celestial
+
+        """
+        __Extra Galaxy Removal__
+        """
         try:
             mask_extra_galaxies = al.Mask2D.from_fits(
                 file_path=dataset_main_path / "mask_extra_galaxies.fits",
@@ -155,6 +181,9 @@ def fit_waveband(
         except FileNotFoundError:
             pass
 
+        """
+        __Mask__
+        """
         if mask_radius is None:
             mask_radius = info.get("mask_radius") or 3.0
         mask_centre = info.get("mask_centre") or (0.0, 0.0)
@@ -168,6 +197,9 @@ def fit_waveband(
 
         dataset = dataset.apply_mask(mask=mask)
 
+        """
+        __Over Sampling__
+        """
         if not use_sersic_over_sampling:
 
             over_sample_size = (
@@ -219,6 +251,32 @@ def fit_waveband(
             dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
         """
+        __Lowest Resolution PSF__
+        """
+        header_primary = al.header_obj_from(
+            file_path=dataset_main_path / dataset_fits_name,
+            hdu=0,
+        )
+
+        lowest_resolution_waveband = header_primary.get("WORST_BAND", None).lower()
+
+        lowest_resolution_waveband_index = dataset_index_dict.get(lowest_resolution_waveband, None)
+
+        psf_lowest_resolution = al.Kernel2D.from_fits(
+            file_path=dataset_main_path / dataset_fits_name,
+            hdu=lowest_resolution_waveband_index * 3 + 2,
+            pixel_scales=0.1,
+            normalize=True
+        )
+
+        # Use OU-MER worst PSF FWHM if available, but if its -99 meaning the OU-MER pipeline failed used a
+        # fall back value computed during lens cutout creation.
+        psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_MER", None))
+
+        if psf_lowest_resolution_fwhm is None or psf_lowest_resolution_fwhm < -98:
+            psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_FWHM", None))
+
+        """
         __Settings AutoFit__
         """
         settings_search = af.SettingsSearch(
@@ -250,6 +308,9 @@ def fit_waveband(
             **settings_search.info,
             dataset_main_path=dataset_main_path,
             skip_rgb_plot=True,
+            psf_lowest_resolution=psf_lowest_resolution,
+            psf_lowest_resolution_fwhm=psf_lowest_resolution_fwhm,
+            pixel_wcs=pixel_wcs,
         )
 
         """

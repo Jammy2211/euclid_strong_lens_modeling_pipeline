@@ -77,17 +77,10 @@ You also need to decide which waveband you want to inspect, with VIS the default
 
 You should choose the strings below corresponding to the results you want to load and analyse.
 """
-# Example for start_here.py which uses SLaM pipeline
+# Example for start_here.py pipeline
 
-# pipeline_name = "slam"
-# dataset_waveband = "vis"
-# search_name = "mass_total[1]"
-
-# Example for mge_lens_model
-
-pipeline_name = "mge_lens_model"
+pipeline_name = "initial_lens_model"
 dataset_waveband = "vis"
-search_name = "mge_lens_model"
 
 """
 __Aggregator__
@@ -96,16 +89,14 @@ Set up the aggregator which will load results from the output folder of the mode
 """
 from autofit.aggregator.aggregator import Aggregator
 
-agg = Aggregator.from_directory(
-    directory=path.join("output", pipeline_name),
-)
+agg = Aggregator.from_directory(directory=path.join("output"), completed_only=True)
 
 """
 Use a query on the aggregator to only get results for the `mass_total[1]` model-fit, which contains the final lens
 model results.
 """
-agg_query = agg.query(agg.search.name == search_name)
-agg_query = agg_query.query(agg_query.unique_tag == dataset_waveband)
+agg_query = agg.query(agg.unique_tag == pipeline_name)
+agg_query = agg.query(agg_query.search.name == dataset_waveband)
 
 """
 Extract the `AggregateCSV` object, which has specific functions for outputting results in a CSV format.

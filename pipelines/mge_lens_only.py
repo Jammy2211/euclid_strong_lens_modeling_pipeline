@@ -3,7 +3,7 @@ Modeling Features: Multi Gaussian Expansion
 ===========================================
 
 A multi Gaussian expansion (MGE) decomposes the light of a galaxy into ~15–100 Gaussians, where the `intensity` of each
-Gaussian is solved for via linear algebra using a process called an "inversion" (see the `light_parametric_linear.py`
+Gaussian is solved for via linear algebra using a process called an "inversion" (see the `linear_light_profiles.py`
 feature for a full description of this).
 
 This pipeline fits MGEs to both the **lens galaxy** and the **source galaxy**:
@@ -185,6 +185,7 @@ def fit(
     bulge = al.model_util.mge_model_from(
         mask_radius=mask_radius,
         total_gaussians=20,
+        gaussian_per_basis=2,
         centre_prior_is_uniform=True,
         centre=dataset_centre,
     )
