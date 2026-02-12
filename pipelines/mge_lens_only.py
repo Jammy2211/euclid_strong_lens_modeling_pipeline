@@ -141,6 +141,32 @@ def fit(
     dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
     """
+    __Lowest Resolution PSF__
+    """
+    header_primary = al.header_obj_from(
+        file_path=dataset_main_path / dataset_fits_name,
+        hdu=0,
+    )
+
+    lowest_resolution_waveband = header_primary.get("WORST_BAND", None).lower()
+
+    lowest_resolution_waveband_index = dataset_index_dict.get(lowest_resolution_waveband, None)
+
+    psf_lowest_resolution = al.Kernel2D.from_fits(
+        file_path=dataset_main_path / dataset_fits_name,
+        hdu=lowest_resolution_waveband_index * 3 + 2,
+        pixel_scales=0.1,
+        normalize=True
+    )
+
+    # Use OU-MER worst PSF FWHM if available, but if its -99 meaning the OU-MER pipeline failed used a
+    # fall back value computed during lens cutout creation.
+    psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_MER", None))
+
+    if psf_lowest_resolution_fwhm is None or psf_lowest_resolution_fwhm < -98:
+        psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_FWHM", None))
+
+    """
     __Settings AutoFit__
 
     The settings of autofit, which controls the output paths, parallelization, database use, etc.
@@ -151,6 +177,13 @@ def fit(
         info={"magzero": magzero},
         session=None,
     )
+
+    """
+    __WCS__
+    """
+    from astropy.wcs import WCS
+
+    pixel_wcs = WCS(header).celestial
 
     """
     __Redshifts__
@@ -178,6 +211,9 @@ def fit(
         title_prefix=dataset_waveband.upper(),
         **settings_search.info,
         dataset_main_path=dataset_main_path,
+        psf_lowest_resolution=psf_lowest_resolution,
+        psf_lowest_resolution_fwhm=psf_lowest_resolution_fwhm,
+        pixel_wcs=pixel_wcs,
     )
 
     # Lens Light
@@ -396,6 +432,9 @@ def fit_waveband(
             title_prefix=dataset_waveband.upper(),
             **settings_search.info,
             dataset_main_path=dataset_main_path,
+            psf_lowest_resolution=psf_lowest_resolution,
+            psf_lowest_resolution_fwhm=psf_lowest_resolution_fwhm,
+            pixel_wcs=pixel_wcs,
         )
 
         """
