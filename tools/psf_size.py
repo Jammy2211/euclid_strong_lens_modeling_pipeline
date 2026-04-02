@@ -34,7 +34,7 @@ folder `dataset/imaging/no_lens_light/mass_sie__source_sersic`.
 dataset_name = "102019586_NEG564463213499964061"
 dataset_path = path.join("dataset", dataset_name)
 
-psf_full = al.Kernel2D.from_fits(
+psf_full = al.Convolver.from_fits(
     file_path=path.join(dataset_path, "psf_full.fits"), hdu=0, pixel_scales=0.1
 )
 
@@ -71,7 +71,7 @@ mat_plot_2d = aplt.MatPlot2D(
 )
 
 plotter = aplt.Array2DPlotter(
-    array=psf,
+    array=psf.kernel,
     mat_plot_2d=mat_plot_2d,
 )
 plotter.figure_2d()
