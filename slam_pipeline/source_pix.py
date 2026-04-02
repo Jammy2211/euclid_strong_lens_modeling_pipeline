@@ -10,7 +10,7 @@ def run_1(
     source_lp_result: af.Result,
     mesh_init: af.Model(al.AbstractMesh) = af.Model(al.mesh.Delaunay),
     regularization_init: af.Model(al.AbstractRegularization) = af.Model(
-        al.reg.AdaptiveBrightnessSplit
+        al.reg.AdaptSplit
     ),
     extra_galaxies: Optional[af.Collection] = None,
     dataset_model: Optional[af.Model] = None,
@@ -130,7 +130,7 @@ def run_2(
     source_pix_result_1: af.Result,
     mesh: af.Model(al.AbstractMesh) = af.Model(al.mesh.Delaunay),
     regularization: af.Model(al.AbstractRegularization) = af.Model(
-        al.reg.AdaptiveBrightnessSplit
+        al.reg.AdaptSplit
     ),
     dataset_model: Optional[af.Model] = None,
     n_batch: int = 20,

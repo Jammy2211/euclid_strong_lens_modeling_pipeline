@@ -1,12 +1,80 @@
 from astropy.io import fits
+from dataclasses import dataclass
+import json
 import numpy as np
+from pathlib import Path
 from PIL import Image
+from typing import List, Optional
 
+import matplotlib.pyplot as plt
+from autoconf import conf as _conf
 from autoconf.dictable import output_to_json
 
 import autofit as af
 import autolens as al
 import autolens.plot as aplt
+
+
+def subplot_rgb(
+    arrays: List[al.Array2DRGB],
+    titles: Optional[List[str]] = None,
+    output_path=None,
+    output_filename: str = "subplot_rgb",
+    output_format: str = "png",
+) -> None:
+    """
+    __RGB Subplot__
+
+    Plot a list of `Array2DRGB` objects as a grid of subplots and save to disk.
+
+    This is the Euclid-specific RGB subplot function. It uses the new `aplt.plot_array`
+    function which detects RGB arrays and skips colormap / colorbar handling automatically.
+
+    Parameters
+    ----------
+    arrays
+        List of `Array2DRGB` objects to plot as individual subplot panels.
+    titles
+        Optional list of panel title strings, one per array. Defaults to empty strings.
+    output_path
+        Directory path to save the figure. ``None`` calls ``plt.show()`` instead.
+    output_filename
+        Base filename (without extension) for the output file.
+    output_format
+        Output file format, e.g. ``"png"``.
+    """
+    from autoarray.plot.utils import subplot_save, conf_subplot_figsize, hide_unused_axes
+
+    n = len(arrays)
+    if n == 0:
+        return
+
+    try:
+        shape_map = _conf.instance["visualize"]["general"]["subplot_shape"]
+        for key in sorted(shape_map.keys(), key=lambda k: int(k)):
+            if n <= int(key):
+                shape_str = shape_map[key]
+                nrows, ncols = eval(shape_str)
+                break
+        else:
+            import math
+            ncols = math.ceil(math.sqrt(n))
+            nrows = math.ceil(n / ncols)
+    except Exception:
+        import math
+        ncols = math.ceil(math.sqrt(n))
+        nrows = math.ceil(n / ncols)
+
+    figsize = conf_subplot_figsize(nrows, ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
+    axes = np.array(axes).flatten()
+
+    for i, array in enumerate(arrays):
+        title = titles[i] if titles is not None and i < len(titles) else ""
+        aplt.plot_array(array, ax=axes[i], title=title)
+
+    hide_unused_axes(axes)
+    subplot_save(fig, output_path or "", output_filename, output_format)
 
 
 def ab_mag_via_flux_from(flux, magzero, xp=np):
@@ -212,35 +280,13 @@ class VisualizerImaging(al.VisualizerImaging):
         img0_masked = al.Array2DRGB(values=img0, mask=mask_rgb)
         img1_masked = al.Array2DRGB(values=img1, mask=mask_rgb)
 
-        mat_plot_2d = aplt.MatPlot2D(
-            output=aplt.Output(
-                path=paths.image_path, filename="subplot_rgb", format="png"
-            ),
+        subplot_rgb(
+            arrays=[img0, img1, img0_masked, img1_masked],
+            titles=["RGB 0", "RGB 1", "RGB 0 Masked", "RGB 1 Masked"],
+            output_path=paths.image_path,
+            output_filename="subplot_rgb",
+            output_format="png",
         )
-
-        plotter_0 = aplt.Array2DPlotter(array=img0, mat_plot_2d=mat_plot_2d)
-        plotter_1 = aplt.Array2DPlotter(array=img1, mat_plot_2d=mat_plot_2d)
-        plotter_0_masked = aplt.Array2DPlotter(
-            array=img0_masked, mat_plot_2d=mat_plot_2d
-        )
-        plotter_1_masked = aplt.Array2DPlotter(
-            array=img1_masked, mat_plot_2d=mat_plot_2d
-        )
-
-        plotter_0.mat_plot_2d = plotter_1.mat_plot_2d
-
-        plotter_0.open_subplot_figure(
-            number_subplots=4,
-            subplot_shape=(2, 2),
-        )
-
-        plotter_0.figure_2d()
-        plotter_1.figure_2d()
-        plotter_0_masked.figure_2d()
-        plotter_1_masked.figure_2d()
-
-        plotter_0.mat_plot_2d.output.subplot_to_figure(auto_filename="subplot_rgb")
-        plotter_0.close_subplot_figure()
 
 
 class AnalysisImaging(al.AnalysisImaging):
@@ -252,15 +298,31 @@ class AnalysisImaging(al.AnalysisImaging):
 
     LATENT_KEYS = [
         "latent.total_lens_flux",
-        "latent.total_lens_flux_13_pix",
-        "latent.total_lens_flux_26_pix",
-        "latent.total_lens_flux_39_pix",
-        "latent.total_lens_flux_52_pix",
+        "latent.total_lens_flux_1_fwhm",
+        "latent.total_lens_flux_2_fwhm",
+        "latent.total_lens_flux_3_fwhm",
+        "latent.total_lens_flux_4_fwhm",
         "latent.total_lensed_source_flux",
         "latent.total_source_flux",
         "latent.magnification",
         #    "latent_effective_einstein_radius"
     ]
+
+    def to_ndarray_2d(self, image, xp):
+
+        array_2d = xp.zeros(image.mask.shape, dtype=image.dtype)
+
+        if xp is np:
+
+            array_2d[image.mask.slim_to_native_tuple] = image.array
+
+        else:
+
+            array_2d = array_2d.at[image.mask.slim_to_native_tuple].set(
+                image.array
+            )
+
+        return array_2d
 
     def compute_latent_variables(self, parameters, model):
         """
@@ -322,44 +384,36 @@ class AnalysisImaging(al.AnalysisImaging):
         try:
 
             image = fit.galaxy_image_dict[fit.tracer.galaxies[0]]
+            image_native = self.to_ndarray_2d(image=image, xp=xp)
 
-            total_lens_flux = xp.sum(image.array)
+            total_lens_flux = xp.sum(image_native)
             lens_ab_mag = ab_mag_via_flux_from(
                 flux=total_lens_flux, magzero=magzero, xp=xp
             )
             total_lens_flux_muJy = flux_mujy_via_ab_mag_from(ab_mag=lens_ab_mag, xp=xp)
 
-            image_native = xp.zeros(image.mask.shape, dtype=image.dtype)
-
-            if xp is np:
-
-                image_native[image.mask.slim_to_native_tuple] = image.array
-
-            else:
-
-                image_native = image_native.at[image.mask.slim_to_native_tuple].set(
-                    image.array
-                )
-
             flat_index = xp.argmax(image_native)
-            y, x = xp.unravel_index(flat_index, image_native.shape)
+            y, x = xp.unravel_index(flat_index, image.shape_native)
 
             psf_lowest_resolution = self.kwargs["psf_lowest_resolution"]
             psf_lowest_resolution_fwhm = self.kwargs["psf_lowest_resolution_fwhm"]
 
             image_convolved_to_lowest = psf_lowest_resolution.convolved_image_from(
-                image=image_native,
+                image=image,
                 blurring_image=None,
                 xp=xp
             )
 
             aperture_multipliers = np.array([1.0, 2.0, 3.0, 4.0])
 
-            aperture_radii = [psf_lowest_resolution_fwhm * multiplier for multiplier in aperture_multipliers]
+            radius = psf_lowest_resolution_fwhm / (0.1 * 2.0)
+            aperture_radii = [radius * multiplier for multiplier in aperture_multipliers]
+
+            image_convolved_to_lowest_native = self.to_ndarray_2d(image=image_convolved_to_lowest, xp=xp)
 
             total_lens_flux_aperture_list = [
                 aperture_flux_from(
-                    image_2d=image_convolved_to_lowest.native,
+                    image_2d=image_convolved_to_lowest_native,
                     centre=(y, x),
                     radius_pixels=radius_pixels,
                     xp=xp,
@@ -380,6 +434,7 @@ class AnalysisImaging(al.AnalysisImaging):
             ]
 
         except AttributeError:
+
             total_lens_flux_muJy = xp.nan
             total_lens_flux_muJy_aperture_list = [xp.nan, xp.nan, xp.nan, xp.nan]
 
@@ -499,3 +554,224 @@ class AnalysisImaging(al.AnalysisImaging):
             obj=wcs_dict,
             file_path=paths._files_path / "wcs.json",
         )
+
+
+# ---------------------------------------------------------------------------
+# Dataset loading
+# ---------------------------------------------------------------------------
+
+@dataclass
+class EuclidDataset:
+    """
+    Container for all objects produced by loading a Euclid VIS dataset.
+
+    Returned by `load_vis_dataset`; pass attribute access (`d.dataset`,
+    `d.magzero`, etc.) into pipelines instead of re-deriving each value.
+    """
+    dataset: object                       # al.Imaging — masked and over-sampled
+    dataset_main_path: Path
+    dataset_fits_name: str
+    dataset_index_dict: dict              # waveband name -> HDU index
+    dataset_centre: tuple                 # (y, x) of brightest central pixel
+    info: dict                            # contents of info.json (empty dict if absent)
+    header: object                        # FITS header of VIS image HDU
+    magzero: Optional[float]             # photometric zero-point from header
+    pixel_wcs: object                     # astropy WCS for sky coordinate conversion
+    psf_lowest_resolution: object         # al.Convolver at the worst-seeing band
+    psf_lowest_resolution_fwhm: float    # FWHM of that PSF in pixels
+    mask_radius: float                    # circular mask radius used (arcsec)
+    positions_likelihood_list: object     # list[al.PositionsLH] or None
+
+
+def load_vis_dataset(
+    dataset_name: str,
+    image_tag: str = "_BGSUB",
+    sample_name: str = None,
+) -> EuclidDataset:
+    """
+    Load and prepare a Euclid VIS imaging dataset for lens modeling.
+
+    This function centralises the dataset setup that is common to every
+    pipeline: loading the FITS file, reading the header, applying the extra-
+    galaxy noise mask, applying the circular analysis mask, setting standard
+    over-sampling, and loading the lowest-resolution PSF for aperture
+    photometry.
+
+    Parameters
+    ----------
+    dataset_name
+        Name of the dataset subdirectory inside ``dataset/``.  The main FITS
+        file is assumed to be ``dataset/<dataset_name>/<dataset_name>.fits``.
+    image_tag
+        Tag appended to instrument names in the FITS HDU headers to identify
+        image HDUs (default ``"_BGSUB"``).
+
+    Returns
+    -------
+    EuclidDataset
+        Dataclass containing the prepared dataset and all associated metadata.
+
+    Notes
+    -----
+    ``pixel_scale`` and ``mask_radius`` are required fields in the dataset's
+    ``info.json`` file.  See the project README for the expected format.
+    """
+    from astropy.wcs import WCS
+
+    # util.py lives in the project root; dataset/ is a sibling directory.
+    project_root = Path(__file__).parent
+    if sample_name is not None:
+        dataset_main_path = project_root / "dataset" / sample_name / dataset_name
+    else:
+        dataset_main_path = project_root / "dataset" / dataset_name
+    dataset_fits_name = f"{dataset_name}.fits"
+
+    dataset_index_dict = dataset_instrument_hdu_dict_via_fits_from(
+        dataset_path=dataset_main_path,
+        dataset_fits_name=dataset_fits_name,
+        image_tag=image_tag,
+    )
+
+    vis_index = dataset_index_dict["vis"]
+
+    with open(dataset_main_path / "info.json") as f:
+        info = json.load(f)
+
+    pixel_scale = info["pixel_scale"]
+
+    dataset = al.Imaging.from_fits(
+        data_path=dataset_main_path / dataset_fits_name,
+        data_hdu=vis_index * 3 + 1,
+        noise_map_path=dataset_main_path / dataset_fits_name,
+        noise_map_hdu=vis_index * 3 + 3,
+        psf_path=dataset_main_path / dataset_fits_name,
+        psf_hdu=vis_index * 3 + 2,
+        pixel_scales=pixel_scale,
+        check_noise_map=False,
+    )
+
+    dataset_centre = dataset.data.brightest_sub_pixel_coordinate_in_region_from(
+        region=(-0.3, 0.3, -0.3, 0.3), box_size=2
+    )
+
+    try:
+        header = al.header_obj_from(
+            file_path=dataset_main_path / dataset_fits_name,
+            hdu=vis_index * 3 + 1,
+        )
+        magzero = header["MAGZERO"]
+    except FileNotFoundError:
+        header = None
+        magzero = None
+
+    pixel_wcs = WCS(header).celestial if header is not None else None
+
+    try:
+        mask_extra_galaxies = al.Mask2D.from_fits(
+            file_path=dataset_main_path / "mask_extra_galaxies.fits",
+            pixel_scales=pixel_scale,
+            invert=True,
+        )
+        dataset = dataset.apply_noise_scaling(mask=mask_extra_galaxies)
+    except FileNotFoundError:
+        pass
+
+    mask_radius = info["mask_radius"]
+    mask_centre = info.get("mask_centre") or (0.0, 0.0)
+
+    mask = al.Mask2D.circular(
+        shape_native=dataset.shape_native,
+        pixel_scales=dataset.pixel_scales,
+        radius=mask_radius,
+        centre=mask_centre,
+    )
+    dataset = dataset.apply_mask(mask=mask)
+
+    over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
+        grid=dataset.grid,
+        sub_size_list=[4, 2, 1],
+        radial_list=[0.1, 0.3],
+        centre_list=[dataset_centre],
+    )
+    dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
+
+    # Lowest-resolution PSF across all MER bands — used for aperture photometry.
+    header_primary = al.header_obj_from(
+        file_path=dataset_main_path / dataset_fits_name,
+        hdu=0,
+    )
+
+    lowest_resolution_waveband = header_primary.get("WORST_BAND", None).lower()
+    lowest_resolution_waveband_index = dataset_index_dict.get(lowest_resolution_waveband, None)
+
+    psf_lowest_resolution = al.Convolver.from_fits(
+        file_path=dataset_main_path / dataset_fits_name,
+        hdu=lowest_resolution_waveband_index * 3 + 2,
+        pixel_scales=pixel_scale,
+        normalize=True,
+    )
+
+    # Use OU-MER FWHM if valid; fall back to cutout-pipeline value if -99.
+    psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_MER", None))
+    if psf_lowest_resolution_fwhm is None or psf_lowest_resolution_fwhm < -98:
+        psf_lowest_resolution_fwhm = float(header_primary.get("WORST_PSF_HDR", None))
+
+    try:
+        positions = al.Grid2DIrregular(
+            values=al.from_json(file_path=dataset_main_path / "positions.json")
+        )
+        positions_likelihood_list = [al.PositionsLH(threshold=0.3, positions=positions)]
+    except FileNotFoundError:
+        positions_likelihood_list = None
+
+    return EuclidDataset(
+        dataset=dataset,
+        dataset_main_path=dataset_main_path,
+        dataset_fits_name=dataset_fits_name,
+        dataset_index_dict=dataset_index_dict,
+        dataset_centre=dataset_centre,
+        info=info,
+        header=header,
+        magzero=magzero,
+        pixel_wcs=pixel_wcs,
+        psf_lowest_resolution=psf_lowest_resolution,
+        psf_lowest_resolution_fwhm=psf_lowest_resolution_fwhm,
+        mask_radius=mask_radius,
+        positions_likelihood_list=positions_likelihood_list,
+    )
+
+
+# ---------------------------------------------------------------------------
+# CLI argument parsing
+# ---------------------------------------------------------------------------
+
+def parse_fit_args():
+    """
+    Parse the standard command-line arguments shared by all pipeline scripts.
+
+    Returns
+    -------
+    (sample_name, dataset_name, iterations_per_quick_update)
+        ``mask_radius`` is always read from the dataset's ``info.json``.
+    """
+    import argparse
+
+    parser = argparse.ArgumentParser(description="PyAutoLens Euclid Pipeline")
+    parser.add_argument(
+        "--sample", metavar="name", required=False, default=None,
+        help="Sample subdirectory inside dataset/ containing the dataset.",
+    )
+    parser.add_argument(
+        "--dataset", metavar="name", required=True,
+        help="Name of the dataset subdirectory inside dataset/<sample>/.",
+    )
+    parser.add_argument(
+        "--iterations_per_quick_update", metavar="int", required=False, default=5000,
+        help="Number of sampler iterations between on-the-fly visualisation updates.",
+    )
+    args = parser.parse_args()
+    return (
+        args.sample,
+        args.dataset,
+        int(args.iterations_per_quick_update),
+    )
