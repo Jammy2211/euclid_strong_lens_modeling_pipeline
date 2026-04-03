@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+
+# PyAutoLens / PyAutoFit outputs
+output/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Data (large files — store separately)
+*.fits
+*.pickle
+*.sqlite
+
+# Loose image at project root
+sie_fit.png
+
+# HPC sync config — machine-specific, contains personal paths
+hpc/sync.conf
