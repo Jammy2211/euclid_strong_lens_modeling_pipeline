@@ -1,0 +1,54 @@
+#!/bin/bash -l
+
+#SBATCH -J euclid_start_here
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=32gb
+#SBATCH --time=02:00:00
+#SBATCH --array=0-0
+#SBATCH -o output/output.%A_%a.out
+#SBATCH -e error/error.%A_%a.err
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=your.email@institution.ac.uk
+
+source $PROJECT_PATH/activate.sh
+
+# -------------------------------
+# Sample
+#
+# The sample is the subdirectory inside dataset/ that contains the datasets.
+# -------------------------------
+sample=q1_walsmley
+
+# -------------------------------
+# Dataset list
+#
+# Each entry is the name of a subdirectory inside dataset/$sample/.
+# Extend the array and update --array to run multiple datasets.
+# -------------------------------
+datasets=(
+102018665_NEG570040238507752998
+)
+
+INDEX=$SLURM_ARRAY_TASK_ID
+dataset="${datasets[$INDEX]}"
+
+echo "=========================================="
+echo "Array job index: $INDEX"
+echo "Sample: $sample"
+echo "Dataset: $dataset"
+date
+nvidia-smi
+
+# -------------------------------
+# Run the initial lens model.
+#
+# All path management is handled inside start_here.py via Path(__file__).
+# The only HPC-specific value here is the absolute path to the script.
+# -------------------------------
+python3 $PROJECT_PATH/start_here.py --sample=$sample --dataset=$dataset
+
+echo "Finished: $dataset"
+date

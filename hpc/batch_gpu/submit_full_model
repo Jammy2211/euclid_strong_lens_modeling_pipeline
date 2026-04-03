@@ -1,0 +1,43 @@
+#!/bin/bash -l
+
+#SBATCH -J euclid_full_model
+#SBATCH --partition=gpu
+#SBATCH --gres=gpu:1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=1
+#SBATCH --mem=64gb
+#SBATCH --time=08:00:00
+#SBATCH --array=0-0
+#SBATCH -o output/output.%A_%a.out
+#SBATCH -e error/error.%A_%a.err
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=your.email@institution.ac.uk
+
+source $PROJECT_PATH/activate.sh
+
+# -------------------------------
+# Sample
+# -------------------------------
+sample=q1_walsmley
+
+# -------------------------------
+# Dataset list
+# -------------------------------
+datasets=(
+102018665_NEG570040238507752998
+)
+
+INDEX=$SLURM_ARRAY_TASK_ID
+dataset="${datasets[$INDEX]}"
+
+echo "=========================================="
+echo "Array job index: $INDEX"
+echo "Sample: $sample"
+echo "Dataset: $dataset"
+date
+nvidia-smi
+
+python3 $PROJECT_PATH/scripts/full_model.py --sample=$sample --dataset=$dataset
+
+echo "Finished: $dataset"
+date
