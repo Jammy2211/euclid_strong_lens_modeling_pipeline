@@ -47,20 +47,20 @@ All scripts accept `--dataset`, `--sample` (optional), and `--iterations_per_qui
 
 ## Test Runs
 
-Set `PYAUTOFIT_TEST_MODE=1` to make all non-linear searches complete almost instantly with trivial samples. Use this to verify the full pipeline executes without errors before submitting to the HPC or running a real fit.
+Set `PYAUTO_TEST_MODE=1` to make all non-linear searches complete almost instantly with trivial samples. Use this to verify the full pipeline executes without errors before submitting to the HPC or running a real fit. Set `PYAUTO_TEST_MODE=2` to additionally skip the sampler step entirely — fastest mode, used by the `/smoke_test` skill.
 
 ```bash
 # Initial lens model
-PYAUTOFIT_TEST_MODE=1 python start_here.py --dataset=102018665_NEG570040238507752998 --sample=q1_walsmley
+PYAUTO_TEST_MODE=1 python start_here.py --dataset=102018665_NEG570040238507752998 --sample=q1_walsmley
 
 # Full SLaM pipeline
-PYAUTOFIT_TEST_MODE=1 python scripts/full_model.py --dataset=102018665_NEG570040238507752998 --sample=q1_walsmley
+PYAUTO_TEST_MODE=1 python scripts/full_model.py --dataset=102018665_NEG570040238507752998 --sample=q1_walsmley
 
 # Sersic lens model
-PYAUTOFIT_TEST_MODE=1 python scripts/sersic_lens_model.py --dataset=102018665_NEG570040238507752998 --sample=q1_walsmley
+PYAUTO_TEST_MODE=1 python scripts/sersic_lens_model.py --dataset=102018665_NEG570040238507752998 --sample=q1_walsmley
 
 # MGE lens-only subtraction
-PYAUTOFIT_TEST_MODE=1 python scripts/mge_lens_only.py --dataset=102018665_NEG570040238507752998 --sample=q1_walsmley
+PYAUTO_TEST_MODE=1 python scripts/mge_lens_only.py --dataset=102018665_NEG570040238507752998 --sample=q1_walsmley
 ```
 
 The example dataset lives at `dataset/q1_walsmley/102018665_NEG570040238507752998/`.
