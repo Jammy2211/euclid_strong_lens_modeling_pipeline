@@ -21,8 +21,10 @@ Auto-next can be toggled to automatically advance after each annotation.
 
 Run from the project root::
 
-    python process_segmentation.py
+    python preprocess/validation_GUI.py --sample=dr1_top_500
+    python preprocess/validation_GUI.py --sample=dr1_top_500 --csv=preprocess/annotations_dr1.csv
 """
+import argparse
 import os
 import csv
 from pathlib import Path
@@ -31,33 +33,16 @@ from matplotlib.widgets import Button, TextBox
 from PIL import Image
 import numpy as np
 
-ROOT_DIR = Path("dataset/dr1_top_500")
-CSV_PATH = Path("preprocess/annotations.csv")
-
 
 def sort_key(p):
     return int(p.name.split("_")[0])
 
 
-lens_dirs = sorted(
-    [
-        d for d in ROOT_DIR.iterdir()
-        if d.is_dir() and "_" in d.name and d.name.split("_")[0].isdigit()
-    ],
-    key=sort_key
-)
-
+CSV_PATH = None
+lens_dirs = []
 idx = 0
 auto_next = [True]
-
 annotations = {}
-if CSV_PATH.exists():
-    with open(CSV_PATH, "r") as f:
-        reader = csv.reader(f)
-        next(reader, None)
-        for row in reader:
-            if len(row) == 2:
-                annotations[row[0]] = row[1]
 
 
 def save_annotation(name, label):
@@ -155,55 +140,78 @@ def on_jump(text):
     jump_box.set_val("")
 
 
-fig, ax = plt.subplots(figsize=(12, 7))
-plt.subplots_adjust(right=0.8, top=0.88)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sample", metavar="name", required=True, help="Sample subdirectory inside dataset/")
+    parser.add_argument("--csv", metavar="path", default="preprocess/annotations.csv", help="Path to annotations CSV (default: preprocess/annotations.csv)")
+    args = parser.parse_args()
 
-jump_ax = plt.axes([0.10, 0.92, 0.08, 0.05])  # was 0.01
-jump_box = TextBox(jump_ax, "Jump to #", initial="")
-jump_box.on_submit(on_jump)
+    ROOT_DIR = Path("dataset") / args.sample
+    CSV_PATH = Path(args.csv)
 
-btn1_ax = plt.axes([0.82, 0.72, 0.15, 0.06])
-btn2_ax = plt.axes([0.82, 0.62, 0.15, 0.06])
-btn3_ax = plt.axes([0.82, 0.52, 0.15, 0.06])
-btn4_ax = plt.axes([0.82, 0.42, 0.15, 0.06])
-btn5_ax = plt.axes([0.82, 0.32, 0.15, 0.06])
-check_ax = plt.axes([0.82, 0.18, 0.15, 0.06])
+    lens_dirs = sorted(
+        [
+            d for d in ROOT_DIR.iterdir()
+            if d.is_dir() and "_" in d.name and d.name.split("_")[0].isdigit()
+        ],
+        key=sort_key,
+    )
 
-btn1 = Button(btn1_ax, "[1] OK")
-btn2 = Button(btn2_ax, "[2] OK no pts")
-btn3 = Button(btn3_ax, "[3] Fix needed")
-btn4 = Button(btn4_ax, "[4] Group lens")
-btn5 = Button(btn5_ax, "[5] Recentering")
-toggle_btn = Button(check_ax, "Auto-next: ON", color="white")
+    if CSV_PATH.exists():
+        with open(CSV_PATH, "r") as f:
+            reader = csv.reader(f)
+            next(reader, None)
+            for row in reader:
+                if len(row) == 2:
+                    annotations[row[0]] = row[1]
 
+    fig, ax = plt.subplots(figsize=(12, 7))
+    plt.subplots_adjust(right=0.8, top=0.88)
 
-def toggle_auto(event):
-    auto_next[0] = not auto_next[0]
-    if auto_next[0]:
-        toggle_btn.label.set_text("Auto-next: ON")
-        toggle_btn.ax.set_facecolor("white")
-    else:
-        toggle_btn.label.set_text("Auto-next: OFF")
-        toggle_btn.ax.set_facecolor("#aaaaaa")
-    fig.canvas.draw_idle()
+    jump_ax = plt.axes([0.10, 0.92, 0.08, 0.05])
+    jump_box = TextBox(jump_ax, "Jump to #", initial="")
+    jump_box.on_submit(on_jump)
 
+    btn1_ax = plt.axes([0.82, 0.72, 0.15, 0.06])
+    btn2_ax = plt.axes([0.82, 0.62, 0.15, 0.06])
+    btn3_ax = plt.axes([0.82, 0.52, 0.15, 0.06])
+    btn4_ax = plt.axes([0.82, 0.42, 0.15, 0.06])
+    btn5_ax = plt.axes([0.82, 0.32, 0.15, 0.06])
+    check_ax = plt.axes([0.82, 0.18, 0.15, 0.06])
 
-buttons = {
-    "1_ok": btn1,
-    "2_ok_no_points": btn2,
-    "3_fix_needed": btn3,
-    "4_group_scale": btn4,
-    "5_recentering_needed": btn5,
-}
+    btn1 = Button(btn1_ax, "[1] OK")
+    btn2 = Button(btn2_ax, "[2] OK no pts")
+    btn3 = Button(btn3_ax, "[3] Fix needed")
+    btn4 = Button(btn4_ax, "[4] Group lens")
+    btn5 = Button(btn5_ax, "[5] Recentering")
+    toggle_btn = Button(check_ax, "Auto-next: ON", color="white")
 
-btn1.on_clicked(lambda event: set_label("1_ok"))
-btn2.on_clicked(lambda event: set_label("2_ok_no_points"))
-btn3.on_clicked(lambda event: set_label("3_fix_needed"))
-btn4.on_clicked(lambda event: set_label("4_group_scale"))
-btn5.on_clicked(lambda event: set_label("5_recentering_needed"))
-toggle_btn.on_clicked(toggle_auto)
+    def toggle_auto(event):
+        auto_next[0] = not auto_next[0]
+        if auto_next[0]:
+            toggle_btn.label.set_text("Auto-next: ON")
+            toggle_btn.ax.set_facecolor("white")
+        else:
+            toggle_btn.label.set_text("Auto-next: OFF")
+            toggle_btn.ax.set_facecolor("#aaaaaa")
+        fig.canvas.draw_idle()
 
-fig.canvas.mpl_connect("key_press_event", on_key)
+    buttons = {
+        "1_ok": btn1,
+        "2_ok_no_points": btn2,
+        "3_fix_needed": btn3,
+        "4_group_scale": btn4,
+        "5_recentering_needed": btn5,
+    }
 
-draw()
-plt.show()
+    btn1.on_clicked(lambda event: set_label("1_ok"))
+    btn2.on_clicked(lambda event: set_label("2_ok_no_points"))
+    btn3.on_clicked(lambda event: set_label("3_fix_needed"))
+    btn4.on_clicked(lambda event: set_label("4_group_scale"))
+    btn5.on_clicked(lambda event: set_label("5_recentering_needed"))
+    toggle_btn.on_clicked(toggle_auto)
+
+    fig.canvas.mpl_connect("key_press_event", on_key)
+
+    draw()
+    plt.show()

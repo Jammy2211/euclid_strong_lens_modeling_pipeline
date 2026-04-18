@@ -19,7 +19,7 @@ def subplot_rgb(
     arrays: List[al.Array2DRGB],
     titles: Optional[List[str]] = None,
     output_path=None,
-    output_filename: str = "subplot_rgb",
+    output_filename: str = "rgb",
     output_format: str = "png",
 ) -> None:
     """
@@ -284,7 +284,7 @@ class VisualizerImaging(al.VisualizerImaging):
             arrays=[img0, img1, img0_masked, img1_masked],
             titles=["RGB 0", "RGB 1", "RGB 0 Masked", "RGB 1 Masked"],
             output_path=paths.image_path,
-            output_filename="subplot_rgb",
+            output_filename="rgb",
             output_format="png",
         )
 

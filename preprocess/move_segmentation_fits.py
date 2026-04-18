@@ -3,44 +3,36 @@ Move Segmentation FITS to Dataset Folders
 ==========================================
 
 For each lens folder in ``Q1-Output/`` whose name matches a folder in
-``dataset/q1_walmsley/``, move all ``.fits`` files into
-``dataset/q1_walmsley/<lens>/segmentation/``.
+``dataset/q1_walmsley_old/``, move all ``.fits`` files into
+``dataset/q1_walmsley_old/<lens>/segmentation/``.
 
 Usage (from project root)::
 
     # Dry-run (no files moved, just shows what would happen):
-    python preprocess/move_segmentation_fits.py --dry-run
+    python preprocess/move_segmentation_fits.py --sample=q1_walmsley_old --dry-run
 
     # Move files (skips lenses where the target already has all fits):
-    python preprocess/move_segmentation_fits.py
+    python preprocess/move_segmentation_fits.py --sample=q1_walmsley_old
 
     # Overwrite / re-move even if target already has the files:
-    python preprocess/move_segmentation_fits.py --force
+    python preprocess/move_segmentation_fits.py --sample=q1_walmsley_old --force
+
+    # Use a different segmentation output folder:
+    python preprocess/move_segmentation_fits.py --sample=q1_walmsley_old --segmentation-name=cosmos_output
 """
 
 import argparse
 import shutil
 from pathlib import Path
 
-sample_name = "q1_walmsley"
-# sample_name = "cos_COWLS"
-# sample_name = "cos_Jackson08"
-# sample_name = "cos_Pourrahmani19"
-# sample_name = "cos_Rojas25"
-
-segmentation_name = "Segmentation-all"
-# segmentation_name = "cosmos_output"
-
-Q1_OUTPUT = Path(f"{segmentation_name}/{sample_name}")
-DATASET_ROOT = Path("dataset") / sample_name
-
-
-def main(dry_run: bool = False, force: bool = False) -> None:
+def main(sample_name: str, segmentation_name: str, dry_run: bool = False, force: bool = False) -> None:
+    Q1_OUTPUT = Path(segmentation_name) / sample_name
+    DATASET_ROOT = Path("dataset") / sample_name
     walmsley_names = {d.name for d in DATASET_ROOT.iterdir() if d.is_dir()}
     q1_names = {d.name for d in Q1_OUTPUT.iterdir() if d.is_dir()}
 
     matched = sorted(walmsley_names & q1_names)
-    print(f"Matched lenses: {len(matched)} (of {len(q1_names)} in Q1-Output, {len(walmsley_names)} in q1_walmsley)")
+    print(f"Matched lenses: {len(matched)} (of {len(q1_names)} in Q1-Output, {len(walmsley_names)} in q1_walmsley_old)")
 
     moved_total = skipped_total = 0
 
@@ -82,7 +74,9 @@ def main(dry_run: bool = False, force: bool = False) -> None:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--sample", metavar="name", required=True, help="Sample subdirectory inside dataset/")
+    parser.add_argument("--segmentation-name", metavar="name", default="Segmentation-all", help="Segmentation output folder name (default: Segmentation-all)")
     parser.add_argument("--dry-run", action="store_true", help="Show what would be moved without moving anything")
     parser.add_argument("--force", action="store_true", help="Overwrite existing files in destination")
     args = parser.parse_args()
-    main(dry_run=args.dry_run, force=args.force)
+    main(sample_name=args.sample, segmentation_name=args.segmentation_name, dry_run=args.dry_run, force=args.force)

@@ -27,8 +27,10 @@ The resulting binary mask is saved automatically to
 
 Run from the project root::
 
-    python binary_editor.py
+    python preprocess/adjust_binary.py --sample=dr1_top_500
+    python preprocess/adjust_binary.py --sample=dr1_top_500 --object=source
 """
+import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
@@ -36,19 +38,12 @@ from astropy.io import fits
 from scipy.ndimage import binary_dilation
 from matplotlib.widgets import TextBox
 
-DATASET_ROOT = Path("DR1-segmentation/dr1-200deg-top500")
 OBJECT = "artefact"
 
 def sort_key(p):
     return int(p.name.split("_")[0])
 
-lens_dirs = sorted(
-    [
-        d for d in DATASET_ROOT.iterdir()
-        if d.is_dir() and "_" in d.name and d.name.split("_")[0].isdigit()
-    ],
-    key=sort_key
-)
+lens_dirs = []
 idx = 0
 dilation_size = 1
 sigma = 0.0
@@ -154,23 +149,40 @@ def submit_id(text):
     id_box.set_val("")
 
 
-fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 5))
-plt.subplots_adjust(left=0.05, right=0.95, top=0.82, bottom=0.18, wspace=0.05)
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--sample", metavar="name", required=True, help="Sample subdirectory inside dataset/")
+    parser.add_argument("--object", metavar="name", default="artefact", help="Object type to binarise (default: artefact)")
+    args = parser.parse_args()
 
-id_ax = plt.axes([0.12, 0.92, 0.1, 0.04])
-id_box = TextBox(id_ax, "Image #", initial="")
-id_box.on_submit(submit_id)
+    OBJECT = args.object
+    DATASET_ROOT = Path("dataset") / args.sample
 
-sigma_ax = plt.axes([0.25, 0.05, 0.2, 0.05])
-sigma_box = TextBox(sigma_ax, "σ", initial="0")
+    lens_dirs = sorted(
+        [
+            d for d in DATASET_ROOT.iterdir()
+            if d.is_dir() and "_" in d.name and d.name.split("_")[0].isdigit()
+        ],
+        key=sort_key,
+    )
 
-dilation_ax = plt.axes([0.55, 0.05, 0.2, 0.05])
-dilation_box = TextBox(dilation_ax, "d", initial="1")
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 5))
+    plt.subplots_adjust(left=0.05, right=0.95, top=0.82, bottom=0.18, wspace=0.05)
 
-sigma_box.on_submit(submit_sigma)
-dilation_box.on_submit(submit_dilation)
+    id_ax = plt.axes([0.12, 0.92, 0.1, 0.04])
+    id_box = TextBox(id_ax, "Image #", initial="")
+    id_box.on_submit(submit_id)
 
-fig.canvas.mpl_connect("key_press_event", on_key)
+    sigma_ax = plt.axes([0.25, 0.05, 0.2, 0.05])
+    sigma_box = TextBox(sigma_ax, "σ", initial="0")
 
-update()
-plt.show()
+    dilation_ax = plt.axes([0.55, 0.05, 0.2, 0.05])
+    dilation_box = TextBox(dilation_ax, "d", initial="1")
+
+    sigma_box.on_submit(submit_sigma)
+    dilation_box.on_submit(submit_dilation)
+
+    fig.canvas.mpl_connect("key_press_event", on_key)
+
+    update()
+    plt.show()

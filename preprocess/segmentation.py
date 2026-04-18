@@ -16,8 +16,8 @@ Also writes ``positions.json`` (consumed by ``util.load_vis_dataset``).
 
 Run from the project root::
 
-    python preprocess/segmentation.py
-    python preprocess/segmentation.py --lens 100_102010484_dr1
+    python preprocess/segmentation.py --sample=dr1_top_500
+    python preprocess/segmentation.py --sample=dr1_top_500 --dataset=100_102010484_dr1
 """
 
 import argparse
@@ -33,10 +33,6 @@ from astropy.io import fits
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import autolens as al
 
-# sample_name = "q1_walmsley"
-sample_name = "dr1_top_500"
-
-DATASET_ROOT = Path("dataset") / sample_name
 N_POSITIONS = 4
 
 
@@ -453,7 +449,11 @@ def process_lens(lens_dir: Path, overview_dir: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--lens",
+        "--sample", metavar="name", required=True,
+        help="Sample subdirectory inside dataset/ (e.g. dr1_top_500).",
+    )
+    parser.add_argument(
+        "--dataset", metavar="name", required=False, default=None,
         help="Optional single lens directory name under the dataset root.",
     )
     return parser.parse_args()
@@ -462,19 +462,21 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    if args.lens:
-        lens_dirs = [DATASET_ROOT / args.lens]
+    dataset_root = Path("dataset") / args.sample
+
+    if args.dataset:
+        lens_dirs = [dataset_root / args.dataset]
         if not lens_dirs[0].is_dir():
             print(f"Lens directory not found: {lens_dirs[0]}")
             return
     else:
-        lens_dirs = sorted(d for d in DATASET_ROOT.iterdir() if d.is_dir())
+        lens_dirs = sorted(d for d in dataset_root.iterdir() if d.is_dir())
 
     if not lens_dirs:
-        print(f"No lens directories found under {DATASET_ROOT}")
+        print(f"No lens directories found under {dataset_root}")
         return
 
-    overview_dir = DATASET_ROOT / "segmentation"
+    overview_dir = dataset_root / "segmentation"
     overview_dir.mkdir(exist_ok=True)
 
     print(f"Processing {len(lens_dirs)} lenses...")
