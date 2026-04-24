@@ -11,6 +11,10 @@ dist/
 # PyAutoLens / PyAutoFit outputs
 output/
 
+# Profiling: simulated dataset + generated results
+profiling/dataset/
+profiling/results/
+
 # Jupyter
 .ipynb_checkpoints/
 *.ipynb
