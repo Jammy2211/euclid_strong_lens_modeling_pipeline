@@ -23,7 +23,7 @@ If you install **PyAutoLens** without a proper GPU setup, a warning will be disp
 Getting Started
 ---------------
 
-**PyAutoLens** supports Python 3.9 to 3.12, with **Python 3.11 recommended**.
+**PyAutoLens** supports Python 3.12 and later, with **Python 3.13 recommended**.
 
 You first may want to set up a **Python virtual environment** or **conda environment** to install the pipeline
 in (see https://docs.python.org/3/library/venv.html).
