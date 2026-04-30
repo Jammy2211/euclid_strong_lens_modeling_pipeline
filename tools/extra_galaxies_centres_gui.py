@@ -30,6 +30,10 @@ from matplotlib import pyplot as plt
 import autolens as al
 import autolens.plot as aplt
 
+import sys
+sys.path.insert(0, str(Path(__file__).parent.parent))
+from util import dataset_instrument_hdu_dict_via_fits_from
+
 """
 __Dataset__
 
@@ -39,13 +43,27 @@ parser = argparse.ArgumentParser(description="Lens Model Inputs")
 parser.add_argument(
     "--dataset", metavar="path", required=True, help="the path to the dataset"
 )
+parser.add_argument(
+    "--sample", metavar="name", required=False, default=None,
+    help="Sample subdirectory inside dataset/ containing the dataset.",
+)
 args = parser.parse_args()
 dataset_name = args.dataset
+sample_name = args.sample
 
-dataset_main_path = Path("dataset") / dataset_name
+if sample_name is not None:
+    dataset_main_path = Path("dataset") / sample_name / dataset_name
+else:
+    dataset_main_path = Path("dataset") / dataset_name
 dataset_fits_name = f"{dataset_name}.fits"
 
-vis_index = 3
+# Resolve the VIS HDU index from the FITS file rather than hardcoding it —
+# different datasets have different numbers of ancillary bands preceding VIS.
+vis_index = dataset_instrument_hdu_dict_via_fits_from(
+    dataset_path=dataset_main_path,
+    dataset_fits_name=dataset_fits_name,
+    image_tag="_BGSUB",
+)["vis"]
 
 """
 The pixel scale of the imaging dataset.
