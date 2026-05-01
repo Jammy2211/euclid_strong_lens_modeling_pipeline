@@ -26,7 +26,9 @@ def fit(
     from autoconf import conf
 
     project_root = Path(__file__).parent.parent
-    conf.instance.push(new_path=project_root / "config", output_path=project_root / "output")
+    conf.instance.push(
+        new_path=project_root / "config", output_path=project_root / "output"
+    )
 
     import autofit as af
     import autolens as al
@@ -34,7 +36,11 @@ def fit(
     d = util.load_vis_dataset(dataset_name, sample_name=sample_name)
 
     settings_search = af.SettingsSearch(
-        path_prefix=Path(sample_name) / dataset_name if sample_name is not None else Path(dataset_name),
+        path_prefix=(
+            Path(sample_name) / dataset_name
+            if sample_name is not None
+            else Path(dataset_name)
+        ),
         unique_tag="mge_lens_only",
         info={"magzero": d.magzero},
         session=None,
@@ -93,11 +99,13 @@ def fit_waveband(
     from pathlib import Path
 
     project_root = Path(__file__).parent.parent
-    conf.instance.push(new_path=project_root / "config", output_path=project_root / "output")
-
-    conf.instance["visualize"]["general"]["units"]["cb_unit"] = (
-        r"$\,\,\mathrm{e^{-}}\,\mathrm{s^{-1}}$"
+    conf.instance.push(
+        new_path=project_root / "config", output_path=project_root / "output"
     )
+
+    conf.instance["visualize"]["general"]["units"][
+        "cb_unit"
+    ] = r"$\,\,\mathrm{e^{-}}\,\mathrm{s^{-1}}$"
 
     # Re-use the dataset index dict from any waveband load; we only need the
     # path and HDU mapping here so load without full over-sampling overhead.
@@ -172,6 +180,7 @@ def fit_waveband(
             magzero = None
 
         from astropy.wcs import WCS
+
         pixel_wcs = WCS(header).celestial if header is not None else None
 
         try:
@@ -202,7 +211,11 @@ def fit_waveband(
         dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
         settings_search = af.SettingsSearch(
-            path_prefix=Path(sample_name) / dataset_name if sample_name is not None else Path(dataset_name),
+            path_prefix=(
+                Path(sample_name) / dataset_name
+                if sample_name is not None
+                else Path(dataset_name)
+            ),
             unique_tag="mge_lens_only",
             info={"magzero": magzero},
             session=None,

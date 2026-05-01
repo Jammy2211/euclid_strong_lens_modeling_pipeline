@@ -37,11 +37,13 @@ def fit_waveband(
     from autoconf import conf
 
     project_root = Path(__file__).parent.parent
-    conf.instance.push(new_path=project_root / "config", output_path=project_root / "output")
-
-    conf.instance["visualize"]["general"]["units"]["cb_unit"] = (
-        r"$\,\,\mathrm{e^{-}}\,\mathrm{s^{-1}}$"
+    conf.instance.push(
+        new_path=project_root / "config", output_path=project_root / "output"
     )
+
+    conf.instance["visualize"]["general"]["units"][
+        "cb_unit"
+    ] = r"$\,\,\mathrm{e^{-}}\,\mathrm{s^{-1}}$"
 
     if sample_name is not None:
         dataset_main_path = project_root / "dataset" / sample_name / dataset_name
@@ -133,11 +135,13 @@ def fit_waveband(
         dataset = dataset.apply_mask(mask=mask)
 
         if not use_sersic_over_sampling:
-            over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
-                grid=dataset.grid,
-                sub_size_list=[4, 2, 1],
-                radial_list=[0.1, 0.3],
-                centre_list=[dataset_centre],
+            over_sample_size = (
+                al.util.over_sample.over_sample_size_via_radial_bins_from(
+                    grid=dataset.grid,
+                    sub_size_list=[4, 2, 1],
+                    radial_list=[0.1, 0.3],
+                    centre_list=[dataset_centre],
+                )
             )
             dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
         else:
@@ -145,17 +149,21 @@ def fit_waveband(
             traced_grid = tracer.traced_grid_2d_list_from(grid=dataset.grid)[-1]
             source_centre = tracer.galaxies[1].bulge.centre
 
-            over_sample_size = al.util.over_sample.over_sample_size_via_radial_bins_from(
-                grid=traced_grid,
-                sub_size_list=[16, 4, 2],
-                radial_list=[0.1, 0.3],
-                centre_list=[source_centre],
+            over_sample_size = (
+                al.util.over_sample.over_sample_size_via_radial_bins_from(
+                    grid=traced_grid,
+                    sub_size_list=[16, 4, 2],
+                    radial_list=[0.1, 0.3],
+                    centre_list=[source_centre],
+                )
             )
-            over_sample_size_lens = al.util.over_sample.over_sample_size_via_radial_bins_from(
-                grid=dataset.grid,
-                sub_size_list=[16, 4, 1],
-                radial_list=[0.1, 0.3],
-                centre_list=[dataset_centre],
+            over_sample_size_lens = (
+                al.util.over_sample.over_sample_size_via_radial_bins_from(
+                    grid=dataset.grid,
+                    sub_size_list=[16, 4, 1],
+                    radial_list=[0.1, 0.3],
+                    centre_list=[dataset_centre],
+                )
             )
             over_sample_size = np.where(
                 over_sample_size > over_sample_size_lens,
@@ -166,7 +174,11 @@ def fit_waveband(
             dataset = dataset.apply_over_sampling(over_sample_size_lp=over_sample_size)
 
         settings_search = af.SettingsSearch(
-            path_prefix=Path(sample_name) / dataset_name if sample_name is not None else Path(dataset_name),
+            path_prefix=(
+                Path(sample_name) / dataset_name
+                if sample_name is not None
+                else Path(dataset_name)
+            ),
             unique_tag=unique_tag,
             info={"magzero": magzero},
             session=None,

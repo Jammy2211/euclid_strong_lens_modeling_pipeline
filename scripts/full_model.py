@@ -36,6 +36,8 @@ source galaxy's light:
 The mass and source models from this search initialize the SOURCE PIX PIPELINE
 searches that follow.
 """
+
+
 def source_lp(
     settings_search,
     analysis,
@@ -92,6 +94,8 @@ Image positions are computed automatically from the SOURCE LP result to prevent
 unphysical source reconstructions.  An adapt image is computed from the SOURCE
 LP result and passed to the analysis.
 """
+
+
 def source_pix_1(
     settings_search,
     analysis,
@@ -149,6 +153,8 @@ Refined pixelisation using the adapt image from SOURCE PIX 1.  The
 ``RectangularAdaptImage`` mesh and ``Adapt`` regularization adapt the source
 pixels and regularization weights to the source's morphology.
 """
+
+
 def source_pix_2(
     settings_search,
     analysis,
@@ -202,6 +208,8 @@ The lens light model is fit from scratch (not seeded from SOURCE LP) because the
 earlier mass and source models may not have been precise enough for an accurate
 lens-light subtraction.
 """
+
+
 def light_lp(
     settings_search,
     analysis,
@@ -251,6 +259,8 @@ Positions are computed from the SOURCE PIX 2 result for more precise multiple
 image positions.  The shear prior is reset to broad uniform priors because the
 ``PowerLaw`` model can absorb azimuthal structure previously captured by shear.
 """
+
+
 def mass_total(
     settings_search,
     analysis,
@@ -312,7 +322,9 @@ def fit(
     from autoconf import conf
 
     project_root = Path(__file__).parent.parent
-    conf.instance.push(new_path=project_root / "config", output_path=project_root / "output")
+    conf.instance.push(
+        new_path=project_root / "config", output_path=project_root / "output"
+    )
 
     import autofit as af
     import autolens as al
@@ -323,7 +335,11 @@ def fit(
     dataset = d.dataset.apply_sparse_operator()
 
     settings_search = af.SettingsSearch(
-        path_prefix=Path(sample_name) / dataset_name if sample_name is not None else Path(dataset_name),
+        path_prefix=(
+            Path(sample_name) / dataset_name
+            if sample_name is not None
+            else Path(dataset_name)
+        ),
         unique_tag="slam",
         info={"magzero": d.magzero},
         session=None,
@@ -400,7 +416,9 @@ def fit(
         dataset=dataset,
         adapt_images=adapt_images,
         positions_likelihood_list=[
-            source_lp_result.positions_likelihood_from(factor=3.0, minimum_threshold=0.2)
+            source_lp_result.positions_likelihood_from(
+                factor=3.0, minimum_threshold=0.2
+            )
         ],
         use_jax=True,
         title_prefix="VIS",
@@ -490,9 +508,11 @@ def fit(
     analysis = util.AnalysisImaging(
         dataset=dataset,
         adapt_images=adapt_images,
-        positions_likelihood_list=[source_pix_result_2.positions_likelihood_from(
-            factor=3.0, minimum_threshold=0.2
-        )],
+        positions_likelihood_list=[
+            source_pix_result_2.positions_likelihood_from(
+                factor=3.0, minimum_threshold=0.2
+            )
+        ],
         use_jax=True,
         title_prefix="VIS",
         psf_lowest_resolution=d.psf_lowest_resolution,

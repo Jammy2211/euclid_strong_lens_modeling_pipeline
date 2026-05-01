@@ -45,7 +45,9 @@ def fit(
     from autoconf import conf
 
     project_root = Path(__file__).parent.parent
-    conf.instance.push(new_path=project_root / "config", output_path=project_root / "output")
+    conf.instance.push(
+        new_path=project_root / "config", output_path=project_root / "output"
+    )
 
     import autofit as af
     import autolens as al
@@ -77,7 +79,11 @@ def fit(
     name inside ``output/<sample>/<dataset_name>/`` for this particular fit.
     """
     settings_search = af.SettingsSearch(
-        path_prefix=Path(sample_name) / dataset_name if sample_name is not None else Path(dataset_name),
+        path_prefix=(
+            Path(sample_name) / dataset_name
+            if sample_name is not None
+            else Path(dataset_name)
+        ),
         unique_tag="initial_lens_model",
         info={"magzero": d.magzero},
         session=None,
@@ -117,7 +123,9 @@ def fit(
     mass.centre.centre_1 = d.dataset_centre[1]
 
     source_bulge = al.model_util.mge_model_from(
-        mask_radius=d.mask_radius, total_gaussians=20, centre_prior_is_uniform=False,
+        mask_radius=d.mask_radius,
+        total_gaussians=20,
+        centre_prior_is_uniform=False,
     )
 
     model = af.Collection(
@@ -170,8 +178,9 @@ def fit(
         n_like_max=100000,
     )
 
-
-    source_lp_result = search.fit(model=model, analysis=analysis, **settings_search.fit_dict)
+    source_lp_result = search.fit(
+        model=model, analysis=analysis, **settings_search.fit_dict
+    )
 
     """
     __Source Pix__
@@ -183,7 +192,9 @@ def fit(
 
     hilbert_pixels = 500
 
-    image_mesh = al.image_mesh.Hilbert(pixels=hilbert_pixels, weight_power=3.5, weight_floor=0.01)
+    image_mesh = al.image_mesh.Hilbert(
+        pixels=hilbert_pixels, weight_power=3.5, weight_floor=0.01
+    )
 
     galaxy_image_name_dict = al.galaxy_name_image_dict_via_result_from(
         result=source_lp_result
@@ -230,13 +241,19 @@ def fit(
         dataset=dataset,
         adapt_images=adapt_images,
         positions_likelihood_list=[
-            source_lp_result.positions_likelihood_from(factor=3.0, minimum_threshold=0.2)
+            source_lp_result.positions_likelihood_from(
+                factor=3.0, minimum_threshold=0.2
+            )
         ],
     )
 
     mass = af.Model(al.mp.Isothermal)
-    mass.centre.centre_0 = af.UniformPrior(lower_limit=d.dataset_centre[0]-0.1, upper_limit=d.dataset_centre[0]+0.1)
-    mass.centre.centre_1 = af.UniformPrior(lower_limit=d.dataset_centre[1]-0.1, upper_limit=d.dataset_centre[1]+0.1)
+    mass.centre.centre_0 = af.UniformPrior(
+        lower_limit=d.dataset_centre[0] - 0.1, upper_limit=d.dataset_centre[0] + 0.1
+    )
+    mass.centre.centre_1 = af.UniformPrior(
+        lower_limit=d.dataset_centre[1] - 0.1, upper_limit=d.dataset_centre[1] + 0.1
+    )
 
     shear = source_lp_result.model.galaxies.lens.shear
 
@@ -272,7 +289,6 @@ def fit(
     )
 
     return search.fit(model=model, analysis=analysis, **settings_search.fit_dict)
-
 
 
 if __name__ == "__main__":
