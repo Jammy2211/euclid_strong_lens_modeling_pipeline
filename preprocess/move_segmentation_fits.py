@@ -25,14 +25,19 @@ import argparse
 import shutil
 from pathlib import Path
 
-def main(sample_name: str, segmentation_name: str, dry_run: bool = False, force: bool = False) -> None:
+
+def main(
+    sample_name: str, segmentation_name: str, dry_run: bool = False, force: bool = False
+) -> None:
     Q1_OUTPUT = Path(segmentation_name) / sample_name
     DATASET_ROOT = Path("dataset") / sample_name
     walmsley_names = {d.name for d in DATASET_ROOT.iterdir() if d.is_dir()}
     q1_names = {d.name for d in Q1_OUTPUT.iterdir() if d.is_dir()}
 
     matched = sorted(walmsley_names & q1_names)
-    print(f"Matched lenses: {len(matched)} (of {len(q1_names)} in Q1-Output, {len(walmsley_names)} in q1_walmsley_old)")
+    print(
+        f"Matched lenses: {len(matched)} (of {len(q1_names)} in Q1-Output, {len(walmsley_names)} in q1_walmsley_old)"
+    )
 
     moved_total = skipped_total = 0
 
@@ -69,14 +74,39 @@ def main(sample_name: str, segmentation_name: str, dry_run: bool = False, force:
         skipped_total += len(skipped)
 
     action = "Would move" if dry_run else "Moved"
-    print(f"\n{action} {moved_total} file(s), skipped {skipped_total} already-present file(s).")
+    print(
+        f"\n{action} {moved_total} file(s), skipped {skipped_total} already-present file(s)."
+    )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--sample", metavar="name", required=True, help="Sample subdirectory inside dataset/")
-    parser.add_argument("--segmentation-name", metavar="name", default="Segmentation-all", help="Segmentation output folder name (default: Segmentation-all)")
-    parser.add_argument("--dry-run", action="store_true", help="Show what would be moved without moving anything")
-    parser.add_argument("--force", action="store_true", help="Overwrite existing files in destination")
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    parser.add_argument(
+        "--sample",
+        metavar="name",
+        required=True,
+        help="Sample subdirectory inside dataset/",
+    )
+    parser.add_argument(
+        "--segmentation-name",
+        metavar="name",
+        default="Segmentation-all",
+        help="Segmentation output folder name (default: Segmentation-all)",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Show what would be moved without moving anything",
+    )
+    parser.add_argument(
+        "--force", action="store_true", help="Overwrite existing files in destination"
+    )
     args = parser.parse_args()
-    main(sample_name=args.sample, segmentation_name=args.segmentation_name, dry_run=args.dry_run, force=args.force)
+    main(
+        sample_name=args.sample,
+        segmentation_name=args.segmentation_name,
+        dry_run=args.dry_run,
+        force=args.force,
+    )

@@ -45,7 +45,9 @@ def fit(
     from autoconf import conf
 
     project_root = Path(__file__).parent
-    conf.instance.push(new_path=project_root / "config", output_path=project_root / "output")
+    conf.instance.push(
+        new_path=project_root / "config", output_path=project_root / "output"
+    )
 
     import autofit as af
     import autolens as al
@@ -77,7 +79,11 @@ def fit(
     name inside ``output/<sample>/<dataset_name>/`` for this particular fit.
     """
     settings_search = af.SettingsSearch(
-        path_prefix=Path(sample_name) / dataset_name if sample_name is not None else Path(dataset_name),
+        path_prefix=(
+            Path(sample_name) / dataset_name
+            if sample_name is not None
+            else Path(dataset_name)
+        ),
         unique_tag="initial_lens_model",
         info={"magzero": d.magzero},
         session=None,

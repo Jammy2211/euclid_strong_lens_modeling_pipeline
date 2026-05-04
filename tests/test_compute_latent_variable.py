@@ -125,13 +125,15 @@ header_primary = al.header_obj_from(
 
 lowest_resolution_waveband = header_primary.get("WORST_BAND", None).lower()
 
-lowest_resolution_waveband_index = dataset_index_dict.get(lowest_resolution_waveband, None)
+lowest_resolution_waveband_index = dataset_index_dict.get(
+    lowest_resolution_waveband, None
+)
 
 psf_lowest_resolution = al.Convolver.from_fits(
     file_path=dataset_main_path / dataset_fits_name,
     hdu=lowest_resolution_waveband_index * 3 + 2,
     pixel_scales=0.1,
-    normalize=True
+    normalize=True,
 )
 
 # Use OU-MER worst PSF FWHM if available, but if its -99 meaning the OU-MER pipeline failed used a

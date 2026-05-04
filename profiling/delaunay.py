@@ -66,6 +66,7 @@ MASK_RADIUS = 3.5
 # Profiling helpers
 # ---------------------------------------------------------------------------
 
+
 class Timer:
     """Accumulates named timing measurements and prints a summary."""
 
@@ -229,8 +230,12 @@ with timer.section("model_build"):
     lens_bulge.centre.centre_0 = af.GaussianPrior(mean=0.0, sigma=0.005)
     lens_bulge.centre.centre_1 = af.GaussianPrior(mean=0.0, sigma=0.005)
     _lens_bulge_ell = al.convert.ell_comps_from(axis_ratio=0.9, angle=45.0)
-    lens_bulge.ell_comps.ell_comps_0 = af.GaussianPrior(mean=_lens_bulge_ell[0], sigma=0.01)
-    lens_bulge.ell_comps.ell_comps_1 = af.GaussianPrior(mean=_lens_bulge_ell[1], sigma=0.01)
+    lens_bulge.ell_comps.ell_comps_0 = af.GaussianPrior(
+        mean=_lens_bulge_ell[0], sigma=0.01
+    )
+    lens_bulge.ell_comps.ell_comps_1 = af.GaussianPrior(
+        mean=_lens_bulge_ell[1], sigma=0.01
+    )
     lens_bulge.intensity = af.GaussianPrior(mean=2.0, sigma=0.1)
     lens_bulge.effective_radius = af.GaussianPrior(mean=0.6, sigma=0.05)
     lens_bulge.sersic_index = af.GaussianPrior(mean=3.0, sigma=0.2)
@@ -247,9 +252,7 @@ with timer.section("model_build"):
     shear.gamma_1 = af.GaussianPrior(mean=0.05, sigma=0.005)
     shear.gamma_2 = af.GaussianPrior(mean=0.05, sigma=0.005)
 
-    lens = af.Model(
-        al.Galaxy, redshift=0.5, bulge=lens_bulge, mass=mass, shear=shear
-    )
+    lens = af.Model(al.Galaxy, redshift=0.5, bulge=lens_bulge, mass=mass, shear=shear)
 
     mesh = al.mesh.Delaunay(
         pixels=n_mesh_vertices,
@@ -365,11 +368,13 @@ with timer.section("ray_trace_data_eager"):
 
 print(f"  Number of planes traced: {len(traced_grids)}")
 
+
 def ray_trace_data_raw(grid_raw):
     """Wraps ray-tracing so inputs/outputs are raw arrays."""
     grid = aa.Grid2DIrregular(values=grid_raw, xp=jnp)
     traced = tracer.traced_grid_2d_list_from(grid=grid, xp=jnp)
     return jnp.stack([tg.array for tg in traced])
+
 
 _, traced_data_grids_raw = jit_profile(
     ray_trace_data_raw, "ray_trace_data_jit", grid_pix_raw
@@ -391,11 +396,13 @@ with timer.section("ray_trace_mesh_eager"):
     for tg in traced_mesh:
         block(tg)
 
+
 def ray_trace_mesh_raw(mesh_raw):
     """Ray-trace image-plane mesh vertices to source plane."""
     grid = aa.Grid2DIrregular(values=mesh_raw, xp=jnp)
     traced = tracer.traced_grid_2d_list_from(grid=grid, xp=jnp)
     return jnp.stack([tg.array for tg in traced])
+
 
 _, traced_mesh_grids_raw = jit_profile(
     ray_trace_mesh_raw, "ray_trace_mesh_jit", mesh_grid_raw
@@ -410,6 +417,7 @@ print(f"  traced_mesh_grids shape: {traced_mesh_grids_raw.shape}")
 
 print("\n--- Step 3: Blurred image (lens light profiles) ---")
 
+
 # Sub-step 3a: Compute raw lens light images (JIT-profiled)
 def lens_image_raw(grid_raw, blurring_grid_raw):
     """Compute lens light images on masked + blurring grids (no PSF)."""
@@ -418,6 +426,7 @@ def lens_image_raw(grid_raw, blurring_grid_raw):
     image = tracer.image_2d_from(grid=grid, xp=jnp)
     blurring_image = tracer.image_2d_from(grid=blurring_grid, xp=jnp)
     return image.array, blurring_image.array
+
 
 with timer.section("lens_image_eager"):
     img_eager, blur_img_eager = lens_image_raw(grid_lp_raw, grid_blurring_raw)
@@ -443,14 +452,19 @@ print(f"  blurred_image shape: {blurred_image.array.shape}")
 
 jnp_params = jnp.array(param_vector)
 
+
 def blurred_image_from_params(params):
     """Reconstruct tracer from params, compute blurred image — fully JIT-traceable."""
     inst = model.instance_from_vector(vector=params, xp=jnp)
     t = al.Tracer(galaxies=list(inst.galaxies))
     result = t.blurred_image_2d_from(
-        grid=grid_lp, psf=dataset.psf, blurring_grid=grid_blurring, xp=jnp,
+        grid=grid_lp,
+        psf=dataset.psf,
+        blurring_grid=grid_blurring,
+        xp=jnp,
     )
     return result.array
+
 
 _, blurred_img_jit = jit_profile(
     blurred_image_from_params, "blurred_image_jit", jnp_params
@@ -463,8 +477,10 @@ likelihood_steps.append(("Blurred image (PSF convolution)", timer.records[-1][1]
 
 print("\n--- Step 4: Profile-subtracted image ---")
 
+
 def profile_subtract(data, blurred_image):
     return data - blurred_image
+
 
 with timer.section("profile_subtract_eager"):
     blurred_img_jnp = jnp.array(blurred_image.array)
@@ -499,7 +515,8 @@ traced_mesh_source = tracer.traced_grid_2d_list_from(
 with timer.section("border_relocation_eager"):
     relocated_grid = border_relocator.relocated_grid_from(grid=traced_source_grid)
     relocated_mesh_grid = border_relocator.relocated_mesh_grid_from(
-        grid=traced_source_grid, mesh_grid=traced_mesh_source,
+        grid=traced_source_grid,
+        mesh_grid=traced_mesh_source,
     )
     block(relocated_grid)
     block(relocated_mesh_grid)
@@ -583,6 +600,7 @@ with timer.section("blurred_mapping_matrix"):
 # border relocation → Delaunay triangulation → interpolation → mapper → mapping matrix → PSF convolution.
 # These steps are tightly sequential; the full pipeline JIT-compiles them all together.
 
+
 def blurred_mm_from_params(params):
     """Reconstruct tracer from params, compute blurred mapping matrix via full inversion setup."""
     inst = model.instance_from_vector(vector=params, xp=jnp)
@@ -597,13 +615,19 @@ def blurred_mm_from_params(params):
         },
     )
     fit_jax = al.FitImaging(
-        dataset=dataset, tracer=t, adapt_images=adapt_images_jax,
-        settings=al.Settings(use_border_relocator=True), xp=jnp,
+        dataset=dataset,
+        tracer=t,
+        adapt_images=adapt_images_jax,
+        settings=al.Settings(use_border_relocator=True),
+        xp=jnp,
     )
     return jnp.array(fit_jax.inversion.operated_mapping_matrix)
 
+
 _, bmm_jit = jit_profile(blurred_mm_from_params, "inversion_setup_jit", jnp_params)
-likelihood_steps.append(("Inversion setup (steps 5-8 combined)", timer.records[-1][1] / 10))
+likelihood_steps.append(
+    ("Inversion setup (steps 5-8 combined)", timer.records[-1][1] / 10)
+)
 
 print(f"  blurred_mapping_matrix (JIT) shape: {bmm_jit.shape}")
 
@@ -616,12 +640,14 @@ print(f"  blurred_mapping_matrix shape: {blurred_mapping_matrix.shape}")
 
 print("\n--- Step 9: Data vector ---")
 
+
 def compute_data_vector(blurred_mapping_matrix, image, noise_map):
     return al.util.inversion_imaging.data_vector_via_blurred_mapping_matrix_from(
         blurred_mapping_matrix=blurred_mapping_matrix,
         image=image,
         noise_map=noise_map,
     )
+
 
 profile_sub_jnp = jnp.array(fit.profile_subtracted_image.array)
 noise_jnp = jnp.array(dataset.noise_map.array)
@@ -645,6 +671,7 @@ print("\n--- Step 10: Curvature matrix ---")
 
 no_reg_list = list(inversion.no_regularization_index_list)
 
+
 def compute_curvature_matrix(blurred_mapping_matrix, noise_map):
     return al.util.inversion.curvature_matrix_via_mapping_matrix_from(
         mapping_matrix=blurred_mapping_matrix,
@@ -654,6 +681,7 @@ def compute_curvature_matrix(blurred_mapping_matrix, noise_map):
         no_regularization_index_list=no_reg_list,
         xp=jnp,
     )
+
 
 with timer.section("curvature_matrix_eager"):
     curvature_matrix = compute_curvature_matrix(bmm_jnp, noise_jnp)
@@ -690,9 +718,11 @@ print(f"  regularization_matrix shape: {regularization_matrix.shape}")
 
 print("\n--- Step 12: Regularized reconstruction ---")
 
+
 def compute_reconstruction(data_vector, curvature_matrix, regularization_matrix):
     curvature_reg_matrix = curvature_matrix + regularization_matrix
     return jnp.linalg.solve(curvature_reg_matrix, data_vector)
+
 
 with timer.section("reconstruction_eager"):
     reconstruction = compute_reconstruction(
@@ -703,7 +733,8 @@ with timer.section("reconstruction_eager"):
     block(reconstruction)
 
 _, reconstruction = jit_profile(
-    compute_reconstruction, "reconstruction_jit",
+    compute_reconstruction,
+    "reconstruction_jit",
     jnp.array(data_vector),
     jnp.array(curvature_matrix),
     jnp.array(regularization_matrix),
@@ -718,9 +749,15 @@ print(f"  reconstruction shape: {reconstruction.shape}")
 
 print("\n--- Step 13: Mapped reconstruction + log evidence ---")
 
+
 def compute_log_evidence(
-    data, noise_map, blurred_image, blurred_mapping_matrix, reconstruction,
-    curvature_matrix, regularization_matrix,
+    data,
+    noise_map,
+    blurred_image,
+    blurred_mapping_matrix,
+    reconstruction,
+    curvature_matrix,
+    regularization_matrix,
 ):
     """Compute the full log evidence including all five terms:
 
@@ -753,7 +790,7 @@ def compute_log_evidence(
     sign_r, log_det_regularization = jnp.linalg.slogdet(regularization_matrix)
 
     # Noise normalization
-    noise_normalization = jnp.sum(jnp.log(2 * jnp.pi * noise_map ** 2))
+    noise_normalization = jnp.sum(jnp.log(2 * jnp.pi * noise_map**2))
 
     return -0.5 * (
         chi_squared
@@ -762,6 +799,7 @@ def compute_log_evidence(
         - log_det_regularization
         + noise_normalization
     )
+
 
 # For the JIT profiling we use the step-by-step matrices for timing.
 # For the correctness assertion we use the inversion's own matrices, because
@@ -775,15 +813,26 @@ reg_jnp = jnp.array(regularization_matrix)
 
 with timer.section("log_evidence_eager"):
     log_evidence = compute_log_evidence(
-        data_array, noise_jnp, blurred_img_jnp, bmm_jnp,
-        recon_jnp, curv_jnp, reg_jnp,
+        data_array,
+        noise_jnp,
+        blurred_img_jnp,
+        bmm_jnp,
+        recon_jnp,
+        curv_jnp,
+        reg_jnp,
     )
     block(log_evidence)
 
 _, log_evidence = jit_profile(
-    compute_log_evidence, "log_evidence_jit",
-    data_array, noise_jnp, blurred_img_jnp, bmm_jnp,
-    recon_jnp, curv_jnp, reg_jnp,
+    compute_log_evidence,
+    "log_evidence_jit",
+    data_array,
+    noise_jnp,
+    blurred_img_jnp,
+    bmm_jnp,
+    recon_jnp,
+    curv_jnp,
+    reg_jnp,
 )
 likelihood_steps.append(("Mapped recon + log evidence", timer.records[-1][1] / 10))
 
@@ -795,8 +844,13 @@ inv_recon_jnp = jnp.array(inversion.reconstruction)
 inv_curv_jnp = jnp.array(inversion.curvature_matrix)
 
 log_evidence_check = compute_log_evidence(
-    data_array, noise_jnp, blurred_img_jnp, bmm_jnp,
-    inv_recon_jnp, inv_curv_jnp, reg_jnp,
+    data_array,
+    noise_jnp,
+    blurred_img_jnp,
+    bmm_jnp,
+    inv_recon_jnp,
+    inv_curv_jnp,
+    reg_jnp,
 )
 print(f"  log_evidence (inv matrices) = {log_evidence_check}")
 print(f"  log_evidence (reference)    = {log_evidence_ref}")
@@ -807,7 +861,9 @@ np.testing.assert_allclose(
     rtol=1e-4,
     err_msg="Log_evidence from inversion matrices does not match FitImaging.log_evidence",
 )
-print("  Assertion PASSED: inversion-matrix log_evidence matches FitImaging.log_evidence")
+print(
+    "  Assertion PASSED: inversion-matrix log_evidence matches FitImaging.log_evidence"
+)
 
 # ===================================================================
 # PART C — Full-pipeline JIT for comparison
@@ -841,7 +897,9 @@ np.testing.assert_allclose(
     rtol=1e-4,
     err_msg="Full-pipeline JIT log_likelihood does not match FitImaging.log_evidence",
 )
-print("  Assertion PASSED: full-pipeline JIT log_likelihood matches FitImaging.log_evidence")
+print(
+    "  Assertion PASSED: full-pipeline JIT log_likelihood matches FitImaging.log_evidence"
+)
 
 # ===================================================================
 # PART D — vmap + correctness
@@ -861,6 +919,7 @@ print("\n--- vmap batched evaluation ---")
 # requested via DELAUNAY_VMAP=1 environment variable.
 
 import os
+
 run_vmap = os.environ.get("DELAUNAY_VMAP", "0") == "1"
 
 if not run_vmap:
@@ -925,6 +984,7 @@ else:
 
 import json
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -950,7 +1010,9 @@ for i, (label, per_call) in enumerate(likelihood_steps, 1):
 
 print("-" * 70)
 print(f"      {'TOTAL (step-by-step)':<{max_label}}  {step_total:>12.6f} s")
-print(f"      {'Full pipeline (single JIT)':<{max_label}}  {full_pipeline_per_call:>12.6f} s")
+print(
+    f"      {'Full pipeline (single JIT)':<{max_label}}  {full_pipeline_per_call:>12.6f} s"
+)
 if vmap_per_call is not None:
     print(f"      {f'vmap batch (per call)':<{max_label}}  {vmap_per_call:>12.6f} s")
     print(f"      {f'vmap speedup vs single JIT':<{max_label}}  {vmap_speedup:>11.1f}x")
@@ -1036,7 +1098,7 @@ fig.suptitle(
     fontweight="bold",
 )
 ax.set_title(
-    f"AutoLens v{al_version}  |  {PIXEL_SCALE}\"/px  |  {n_image_pixels} pixels  |  "
+    f'AutoLens v{al_version}  |  {PIXEL_SCALE}"/px  |  {n_image_pixels} pixels  |  '
     f"{n_over_sampled_pixels} over-sampled  |  {n_source_pixels} Delaunay vertices  |  "
     f"total: {step_total:.6f} s",
     fontsize=9,

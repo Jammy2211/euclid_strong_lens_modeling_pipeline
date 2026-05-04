@@ -31,6 +31,7 @@ import autolens as al
 import autolens.plot as aplt
 
 import sys
+
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from util import dataset_instrument_hdu_dict_via_fits_from
 
@@ -44,7 +45,10 @@ parser.add_argument(
     "--dataset", metavar="path", required=True, help="the path to the dataset"
 )
 parser.add_argument(
-    "--sample", metavar="name", required=False, default=None,
+    "--sample",
+    metavar="name",
+    required=False,
+    default=None,
     help="Sample subdirectory inside dataset/ containing the dataset.",
 )
 args = parser.parse_args()

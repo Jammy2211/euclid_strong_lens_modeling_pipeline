@@ -24,6 +24,7 @@ Run from the project root::
     python preprocess/validation_GUI.py --sample=dr1_top_500
     python preprocess/validation_GUI.py --sample=dr1_top_500 --csv=preprocess/annotations_dr1.csv
 """
+
 import argparse
 import os
 import csv
@@ -142,8 +143,18 @@ def on_jump(text):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sample", metavar="name", required=True, help="Sample subdirectory inside dataset/")
-    parser.add_argument("--csv", metavar="path", default="preprocess/annotations.csv", help="Path to annotations CSV (default: preprocess/annotations.csv)")
+    parser.add_argument(
+        "--sample",
+        metavar="name",
+        required=True,
+        help="Sample subdirectory inside dataset/",
+    )
+    parser.add_argument(
+        "--csv",
+        metavar="path",
+        default="preprocess/annotations.csv",
+        help="Path to annotations CSV (default: preprocess/annotations.csv)",
+    )
     args = parser.parse_args()
 
     ROOT_DIR = Path("dataset") / args.sample
@@ -151,7 +162,8 @@ if __name__ == "__main__":
 
     lens_dirs = sorted(
         [
-            d for d in ROOT_DIR.iterdir()
+            d
+            for d in ROOT_DIR.iterdir()
             if d.is_dir() and "_" in d.name and d.name.split("_")[0].isdigit()
         ],
         key=sort_key,

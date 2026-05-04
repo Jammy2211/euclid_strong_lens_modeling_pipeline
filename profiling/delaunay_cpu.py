@@ -61,6 +61,7 @@ N_REPEATS = 10
 # Profiling helpers
 # ---------------------------------------------------------------------------
 
+
 class Timer:
     """Accumulates named timing measurements and prints a summary."""
 
@@ -205,8 +206,12 @@ with timer.section("model_build"):
     lens_bulge.centre.centre_0 = af.GaussianPrior(mean=0.0, sigma=0.005)
     lens_bulge.centre.centre_1 = af.GaussianPrior(mean=0.0, sigma=0.005)
     _lens_bulge_ell = al.convert.ell_comps_from(axis_ratio=0.9, angle=45.0)
-    lens_bulge.ell_comps.ell_comps_0 = af.GaussianPrior(mean=_lens_bulge_ell[0], sigma=0.01)
-    lens_bulge.ell_comps.ell_comps_1 = af.GaussianPrior(mean=_lens_bulge_ell[1], sigma=0.01)
+    lens_bulge.ell_comps.ell_comps_0 = af.GaussianPrior(
+        mean=_lens_bulge_ell[0], sigma=0.01
+    )
+    lens_bulge.ell_comps.ell_comps_1 = af.GaussianPrior(
+        mean=_lens_bulge_ell[1], sigma=0.01
+    )
     lens_bulge.intensity = af.GaussianPrior(mean=2.0, sigma=0.1)
     lens_bulge.effective_radius = af.GaussianPrior(mean=0.6, sigma=0.05)
     lens_bulge.sersic_index = af.GaussianPrior(mean=3.0, sigma=0.2)
@@ -223,9 +228,7 @@ with timer.section("model_build"):
     shear.gamma_1 = af.GaussianPrior(mean=0.05, sigma=0.005)
     shear.gamma_2 = af.GaussianPrior(mean=0.05, sigma=0.005)
 
-    lens = af.Model(
-        al.Galaxy, redshift=0.5, bulge=lens_bulge, mass=mass, shear=shear
-    )
+    lens = af.Model(al.Galaxy, redshift=0.5, bulge=lens_bulge, mass=mass, shear=shear)
 
     mesh = al.mesh.Delaunay(
         pixels=n_mesh_vertices,
@@ -334,8 +337,10 @@ grid_blurring = dataset.grids.blurring
 
 print("\n--- Step 1: Ray-trace data grid ---")
 
+
 def ray_trace_data():
     return tracer.traced_grid_2d_list_from(grid=grid_pix, xp=np)
+
 
 traced_grids = eager_profile(ray_trace_data, "ray_trace_data")
 likelihood_steps.append(("Ray-trace data grid", timer.records[-1][1] / N_REPEATS))
@@ -349,8 +354,10 @@ print("\n--- Step 2: Ray-trace mesh grid ---")
 
 _mesh_irregular = al.Grid2DIrregular(image_plane_mesh_grid)
 
+
 def ray_trace_mesh():
     return tracer.traced_grid_2d_list_from(grid=_mesh_irregular, xp=np)
+
 
 traced_mesh = eager_profile(ray_trace_mesh, "ray_trace_mesh")
 likelihood_steps.append(("Ray-trace mesh grid", timer.records[-1][1] / N_REPEATS))
@@ -361,6 +368,7 @@ likelihood_steps.append(("Ray-trace mesh grid", timer.records[-1][1] / N_REPEATS
 
 print("\n--- Step 3: Blurred image (lens light + PSF) ---")
 
+
 def blurred_image_compute():
     return tracer.blurred_image_2d_from(
         grid=grid_lp,
@@ -369,8 +377,11 @@ def blurred_image_compute():
         xp=np,
     )
 
+
 blurred_image = eager_profile(blurred_image_compute, "blurred_image")
-likelihood_steps.append(("Blurred image (lens light + PSF)", timer.records[-1][1] / N_REPEATS))
+likelihood_steps.append(
+    ("Blurred image (lens light + PSF)", timer.records[-1][1] / N_REPEATS)
+)
 
 # ---------------------------------------------------------------------------
 # Step 4: Profile-subtracted image
@@ -381,8 +392,10 @@ print("\n--- Step 4: Profile-subtracted image ---")
 data_array = np.asarray(dataset.data.array)
 blurred_img_np = np.asarray(blurred_image.array)
 
+
 def profile_subtract():
     return data_array - blurred_img_np
+
 
 profile_subtracted = eager_profile(profile_subtract, "profile_subtract")
 likelihood_steps.append(("Profile-subtracted image", timer.records[-1][1] / N_REPEATS))
@@ -400,14 +413,19 @@ border_relocator = BorderRelocator(mask=dataset.mask, sub_size=1)
 traced_source_grid = tracer.traced_grid_2d_list_from(grid=grid_pix, xp=np)[-1]
 traced_mesh_source = tracer.traced_grid_2d_list_from(grid=_mesh_irregular, xp=np)[-1]
 
+
 def border_relocation():
     relocated_grid = border_relocator.relocated_grid_from(grid=traced_source_grid)
     relocated_mesh_grid = border_relocator.relocated_mesh_grid_from(
-        grid=traced_source_grid, mesh_grid=traced_mesh_source,
+        grid=traced_source_grid,
+        mesh_grid=traced_mesh_source,
     )
     return relocated_grid, relocated_mesh_grid
 
-relocated_grid, relocated_mesh_grid = eager_profile(border_relocation, "border_relocation")
+
+relocated_grid, relocated_mesh_grid = eager_profile(
+    border_relocation, "border_relocation"
+)
 likelihood_steps.append(("Border relocation", timer.records[-1][1] / N_REPEATS))
 
 # ---------------------------------------------------------------------------
@@ -417,6 +435,7 @@ likelihood_steps.append(("Border relocation", timer.records[-1][1] / N_REPEATS))
 print("\n--- Step 6: Delaunay triangulation + mapper ---")
 
 pixelization_obj = instance.galaxies.source.pixelization
+
 
 def delaunay_and_mapper():
     interpolator = al.InterpolatorDelaunay(
@@ -431,8 +450,11 @@ def delaunay_and_mapper():
     )
     return mapper
 
+
 mapper = eager_profile(delaunay_and_mapper, "delaunay_and_mapper")
-likelihood_steps.append(("Delaunay + interpolation + mapper", timer.records[-1][1] / N_REPEATS))
+likelihood_steps.append(
+    ("Delaunay + interpolation + mapper", timer.records[-1][1] / N_REPEATS)
+)
 print(f"  mapper.pixels (source): {mapper.pixels}")
 
 # ---------------------------------------------------------------------------
@@ -441,8 +463,10 @@ print(f"  mapper.pixels (source): {mapper.pixels}")
 
 print("\n--- Step 7: Mapping matrix ---")
 
+
 def mapping_matrix_compute():
     return mapper.mapping_matrix
+
 
 mapping_matrix = eager_profile(mapping_matrix_compute, "mapping_matrix")
 likelihood_steps.append(("Mapping matrix", timer.records[-1][1] / N_REPEATS))
@@ -454,6 +478,7 @@ print(f"  mapping_matrix shape: {mapping_matrix.shape}")
 
 print("\n--- Step 8: Blurred mapping matrix ---")
 
+
 def blurred_mapping_matrix_compute():
     return dataset.psf.convolved_mapping_matrix_from(
         mapping_matrix=mapping_matrix,
@@ -461,10 +486,13 @@ def blurred_mapping_matrix_compute():
         xp=np,
     )
 
+
 blurred_mapping_matrix = eager_profile(
     blurred_mapping_matrix_compute, "blurred_mapping_matrix"
 )
-likelihood_steps.append(("Blurred mapping matrix (PSF)", timer.records[-1][1] / N_REPEATS))
+likelihood_steps.append(
+    ("Blurred mapping matrix (PSF)", timer.records[-1][1] / N_REPEATS)
+)
 print(f"  blurred_mapping_matrix shape: {blurred_mapping_matrix.shape}")
 
 # ---------------------------------------------------------------------------
@@ -476,12 +504,14 @@ print("\n--- Step 9: Data vector ---")
 profile_sub_np = np.asarray(fit.profile_subtracted_image.array)
 noise_np = np.asarray(dataset.noise_map.array)
 
+
 def data_vector_compute():
     return al.util.inversion_imaging.data_vector_via_blurred_mapping_matrix_from(
         blurred_mapping_matrix=np.asarray(blurred_mapping_matrix),
         image=profile_sub_np,
         noise_map=noise_np,
     )
+
 
 data_vector = eager_profile(data_vector_compute, "data_vector")
 likelihood_steps.append(("Data vector (D)", timer.records[-1][1] / N_REPEATS))
@@ -536,7 +566,9 @@ np.testing.assert_allclose(
     rtol=1e-4,
     err_msg="delaunay_cpu[euclid]: steady FitImaging log_evidence drifted",
 )
-print(f"  Assertion PASSED: FitImaging log_evidence is reproducible across warmup + steady calls")
+print(
+    f"  Assertion PASSED: FitImaging log_evidence is reproducible across warmup + steady calls"
+)
 
 
 # ===================================================================
@@ -545,6 +577,7 @@ print(f"  Assertion PASSED: FitImaging log_evidence is reproducible across warmu
 
 import json
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
@@ -571,15 +604,15 @@ for i, (label, per_call) in enumerate(likelihood_steps, 1):
 
 print("-" * 70)
 print(f"      {'TOTAL (steps 1-9 sum)':<{max_label}}  {step_total:>12.6f} s")
-print(f"      {'Full FitImaging (per call)':<{max_label}}  {full_fit_per_call:>12.6f} s")
+print(
+    f"      {'Full FitImaging (per call)':<{max_label}}  {full_fit_per_call:>12.6f} s"
+)
 print("=" * 70)
 
 # Cross-reference against the JAX JSON if it exists — surfaces the
 # CPU-vs-JAX comparison right in the log without needing a separate tool.
 jax_summary_path = (
-    _script_dir
-    / "results"
-    / f"delaunay_likelihood_summary_euclid_v{al_version}.json"
+    _script_dir / "results" / f"delaunay_likelihood_summary_euclid_v{al_version}.json"
 )
 jax_full_per_call = None
 if jax_summary_path.exists():
@@ -674,7 +707,7 @@ fig.suptitle(
     fontweight="bold",
 )
 ax.set_title(
-    f"AutoLens v{al_version}  |  {PIXEL_SCALE}\"/px  |  {n_image_pixels} pixels  |  "
+    f'AutoLens v{al_version}  |  {PIXEL_SCALE}"/px  |  {n_image_pixels} pixels  |  '
     f"{n_over_sampled_pixels} over-sampled  |  {n_source_pixels} Delaunay vertices  |  "
     f"sparse setup: {sparse_operator_setup_time:.2f} s",
     fontsize=9,

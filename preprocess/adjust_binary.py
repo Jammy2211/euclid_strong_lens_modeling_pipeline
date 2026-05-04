@@ -30,6 +30,7 @@ Run from the project root::
     python preprocess/adjust_binary.py --sample=dr1_top_500
     python preprocess/adjust_binary.py --sample=dr1_top_500 --object=source
 """
+
 import argparse
 import numpy as np
 import matplotlib.pyplot as plt
@@ -40,8 +41,10 @@ from matplotlib.widgets import TextBox
 
 OBJECT = "artefact"
 
+
 def sort_key(p):
     return int(p.name.split("_")[0])
+
 
 lens_dirs = []
 idx = 0
@@ -151,8 +154,18 @@ def submit_id(text):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--sample", metavar="name", required=True, help="Sample subdirectory inside dataset/")
-    parser.add_argument("--object", metavar="name", default="artefact", help="Object type to binarise (default: artefact)")
+    parser.add_argument(
+        "--sample",
+        metavar="name",
+        required=True,
+        help="Sample subdirectory inside dataset/",
+    )
+    parser.add_argument(
+        "--object",
+        metavar="name",
+        default="artefact",
+        help="Object type to binarise (default: artefact)",
+    )
     args = parser.parse_args()
 
     OBJECT = args.object
@@ -160,7 +173,8 @@ if __name__ == "__main__":
 
     lens_dirs = sorted(
         [
-            d for d in DATASET_ROOT.iterdir()
+            d
+            for d in DATASET_ROOT.iterdir()
             if d.is_dir() and "_" in d.name and d.name.split("_")[0].isdigit()
         ],
         key=sort_key,

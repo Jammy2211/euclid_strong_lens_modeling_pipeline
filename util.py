@@ -43,7 +43,11 @@ def subplot_rgb(
     output_format
         Output file format, e.g. ``"png"``.
     """
-    from autoarray.plot.utils import subplot_save, conf_subplot_figsize, hide_unused_axes
+    from autoarray.plot.utils import (
+        subplot_save,
+        conf_subplot_figsize,
+        hide_unused_axes,
+    )
 
     n = len(arrays)
     if n == 0:
@@ -58,10 +62,12 @@ def subplot_rgb(
                 break
         else:
             import math
+
             ncols = math.ceil(math.sqrt(n))
             nrows = math.ceil(n / ncols)
     except Exception:
         import math
+
         ncols = math.ceil(math.sqrt(n))
         nrows = math.ceil(n / ncols)
 
@@ -318,9 +324,7 @@ class AnalysisImaging(al.AnalysisImaging):
 
         else:
 
-            array_2d = array_2d.at[image.mask.slim_to_native_tuple].set(
-                image.array
-            )
+            array_2d = array_2d.at[image.mask.slim_to_native_tuple].set(image.array)
 
         return array_2d
 
@@ -399,17 +403,19 @@ class AnalysisImaging(al.AnalysisImaging):
             psf_lowest_resolution_fwhm = self.kwargs["psf_lowest_resolution_fwhm"]
 
             image_convolved_to_lowest = psf_lowest_resolution.convolved_image_from(
-                image=image,
-                blurring_image=None,
-                xp=xp
+                image=image, blurring_image=None, xp=xp
             )
 
             aperture_multipliers = np.array([1.0, 2.0, 3.0, 4.0])
 
             radius = psf_lowest_resolution_fwhm / (0.1 * 2.0)
-            aperture_radii = [radius * multiplier for multiplier in aperture_multipliers]
+            aperture_radii = [
+                radius * multiplier for multiplier in aperture_multipliers
+            ]
 
-            image_convolved_to_lowest_native = self.to_ndarray_2d(image=image_convolved_to_lowest, xp=xp)
+            image_convolved_to_lowest_native = self.to_ndarray_2d(
+                image=image_convolved_to_lowest, xp=xp
+            )
 
             total_lens_flux_aperture_list = [
                 aperture_flux_from(
@@ -560,6 +566,7 @@ class AnalysisImaging(al.AnalysisImaging):
 # Dataset loading
 # ---------------------------------------------------------------------------
 
+
 @dataclass
 class EuclidDataset:
     """
@@ -568,19 +575,20 @@ class EuclidDataset:
     Returned by `load_vis_dataset`; pass attribute access (`d.dataset`,
     `d.magzero`, etc.) into pipelines instead of re-deriving each value.
     """
-    dataset: object                       # al.Imaging — masked and over-sampled
+
+    dataset: object  # al.Imaging — masked and over-sampled
     dataset_main_path: Path
     dataset_fits_name: str
-    dataset_index_dict: dict              # waveband name -> HDU index
-    dataset_centre: tuple                 # (y, x) of brightest central pixel
-    info: dict                            # contents of info.json (empty dict if absent)
-    header: object                        # FITS header of VIS image HDU
-    magzero: Optional[float]             # photometric zero-point from header
-    pixel_wcs: object                     # astropy WCS for sky coordinate conversion
-    psf_lowest_resolution: object         # al.Convolver at the worst-seeing band
-    psf_lowest_resolution_fwhm: float    # FWHM of that PSF in pixels
-    mask_radius: float                    # circular mask radius used (arcsec)
-    positions_likelihood_list: object     # list[al.PositionsLH] or None
+    dataset_index_dict: dict  # waveband name -> HDU index
+    dataset_centre: tuple  # (y, x) of brightest central pixel
+    info: dict  # contents of info.json (empty dict if absent)
+    header: object  # FITS header of VIS image HDU
+    magzero: Optional[float]  # photometric zero-point from header
+    pixel_wcs: object  # astropy WCS for sky coordinate conversion
+    psf_lowest_resolution: object  # al.Convolver at the worst-seeing band
+    psf_lowest_resolution_fwhm: float  # FWHM of that PSF in pixels
+    mask_radius: float  # circular mask radius used (arcsec)
+    positions_likelihood_list: object  # list[al.PositionsLH] or None
 
 
 def load_vis_dataset(
@@ -702,7 +710,9 @@ def load_vis_dataset(
     )
 
     lowest_resolution_waveband = header_primary.get("WORST_BAND", None).lower()
-    lowest_resolution_waveband_index = dataset_index_dict.get(lowest_resolution_waveband, None)
+    lowest_resolution_waveband_index = dataset_index_dict.get(
+        lowest_resolution_waveband, None
+    )
 
     psf_lowest_resolution = al.Convolver.from_fits(
         file_path=dataset_main_path / dataset_fits_name,
@@ -745,6 +755,7 @@ def load_vis_dataset(
 # CLI argument parsing
 # ---------------------------------------------------------------------------
 
+
 def parse_fit_args():
     """
     Parse the standard command-line arguments shared by all pipeline scripts.
@@ -758,15 +769,23 @@ def parse_fit_args():
 
     parser = argparse.ArgumentParser(description="PyAutoLens Euclid Pipeline")
     parser.add_argument(
-        "--sample", metavar="name", required=False, default=None,
+        "--sample",
+        metavar="name",
+        required=False,
+        default=None,
         help="Sample subdirectory inside dataset/ containing the dataset.",
     )
     parser.add_argument(
-        "--dataset", metavar="name", required=True,
+        "--dataset",
+        metavar="name",
+        required=True,
         help="Name of the dataset subdirectory inside dataset/<sample>/.",
     )
     parser.add_argument(
-        "--iterations_per_quick_update", metavar="int", required=False, default=5000,
+        "--iterations_per_quick_update",
+        metavar="int",
+        required=False,
+        default=5000,
         help="Number of sampler iterations between on-the-fly visualisation updates.",
     )
     args = parser.parse_args()

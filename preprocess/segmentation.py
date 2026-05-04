@@ -40,6 +40,7 @@ N_POSITIONS = 4
 # Helpers
 # ---------------------------------------------------------------------------
 
+
 def find_local_maxima(flux: np.ndarray) -> list[tuple[float, int, int]]:
     """Return (value, row, col) for every interior local maximum, sorted descending."""
     ny, nx = flux.shape
@@ -47,13 +48,20 @@ def find_local_maxima(flux: np.ndarray) -> list[tuple[float, int, int]]:
     for r in range(1, ny - 1):
         for c in range(1, nx - 1):
             v = flux[r, c]
-            if v > flux[r - 1, c] and v > flux[r + 1, c] and v > flux[r, c - 1] and v > flux[r, c + 1]:
+            if (
+                v > flux[r - 1, c]
+                and v > flux[r + 1, c]
+                and v > flux[r, c - 1]
+                and v > flux[r, c + 1]
+            ):
                 maxima.append((float(v), r, c))
     maxima.sort(reverse=True)
     return maxima
 
 
-def pixel_to_arcsec(row: int, col: int, ny: int, nx: int, pixel_scale: float) -> list[float]:
+def pixel_to_arcsec(
+    row: int, col: int, ny: int, nx: int, pixel_scale: float
+) -> list[float]:
     """Convert (row, col) to AutoLens [y, x] arcsec using half-pixel offset convention."""
     y = (ny / 2 - 0.5 - row) * pixel_scale
     x = (col - nx / 2 + 0.5) * pixel_scale
@@ -97,6 +105,7 @@ def make_extent(image: np.ndarray, pixel_scale: float) -> list[float]:
 
 # --- tick helpers (mirrors autoarray.plot.utils) ----------------------------
 
+
 def _inward_ticks(lo: float, hi: float, factor: float = 0.75, n: int = 3) -> np.ndarray:
     centre = (lo + hi) / 2.0
     return np.linspace(
@@ -138,18 +147,23 @@ def apply_arcsec_ticks(ax: plt.Axes, extent: list[float]) -> None:
 # Positions
 # ---------------------------------------------------------------------------
 
+
 def compute_positions(
-        flux: np.ndarray,
-        snr_map: np.ndarray | None,
-        ny: int,
-        nx: int,
-        pixel_scale: float,
+    flux: np.ndarray,
+    snr_map: np.ndarray | None,
+    ny: int,
+    nx: int,
+    pixel_scale: float,
 ) -> list[list[float]]:
     """Return up to N_POSITIONS arcsec positions from the brightest local maxima."""
     SNR_THRESHOLD = 3.0
     SNR_STEP = 0.1
     all_maxima = find_local_maxima(flux)
-    maxima = [(v, r, c) for v, r, c in all_maxima if snr_map is None or snr_map[r, c] > SNR_THRESHOLD]
+    maxima = [
+        (v, r, c)
+        for v, r, c in all_maxima
+        if snr_map is None or snr_map[r, c] > SNR_THRESHOLD
+    ]
 
     if not maxima:
         return []
@@ -158,17 +172,22 @@ def compute_positions(
     positions = [pixel_to_arcsec(r, c, ny, nx, pixel_scale) for _, r, c in selected]
 
     # If no counter-image found, lower the SNR threshold one step at a time
-    has_counter = any(p[0] * positions[0][0] < 0 or p[1] * positions[0][1] < 0 for p in positions[1:])
+    has_counter = any(
+        p[0] * positions[0][0] < 0 or p[1] * positions[0][1] < 0 for p in positions[1:]
+    )
     if not has_counter and snr_map is not None:
         threshold = SNR_THRESHOLD - SNR_STEP
         while threshold >= 0:
             lower_maxima = sorted(
                 [(v, r, c) for v, r, c in all_maxima if snr_map[r, c] > threshold],
-                reverse=True
+                reverse=True,
             )
             for v, r, c in lower_maxima:
                 candidate = pixel_to_arcsec(r, c, ny, nx, pixel_scale)
-                if candidate not in positions and (candidate[0] * positions[0][0] < 0 or candidate[1] * positions[0][1] < 0):
+                if candidate not in positions and (
+                    candidate[0] * positions[0][0] < 0
+                    or candidate[1] * positions[0][1] < 0
+                ):
                     positions[-1] = candidate
                     break
             else:
@@ -183,29 +202,36 @@ def compute_positions(
 # Diagnostic PNG
 # ---------------------------------------------------------------------------
 
-def _draw_mask_circle(ax: plt.Axes, mask_centre: list[float], mask_radius: float) -> None:
+
+def _draw_mask_circle(
+    ax: plt.Axes, mask_centre: list[float], mask_radius: float
+) -> None:
     """Overlay the circular mask boundary on *ax* (arcsec coordinates)."""
     cy, cx = mask_centre
     circle = mpatches.Circle(
-        (cx, cy), mask_radius,
-        edgecolor="white", facecolor="none", linewidth=1.5, linestyle="--",
+        (cx, cy),
+        mask_radius,
+        edgecolor="white",
+        facecolor="none",
+        linewidth=1.5,
+        linestyle="--",
     )
     ax.add_patch(circle)
 
 
 def save_diagnostic_png(
-        rgb_image: np.ndarray,
-        vis_image: np.ndarray,
-        source_flux: np.ndarray,
-        artefact_flux: np.ndarray,
-        artefact_binary: np.ndarray,
-        lens_flux: np.ndarray,
-        lens_binary: np.ndarray,
-        pixel_scale: float,
-        mask_centre: list[float],
-        mask_radius: float,
-        position_list: list[list[float]],
-        output_path: Path,
+    rgb_image: np.ndarray,
+    vis_image: np.ndarray,
+    source_flux: np.ndarray,
+    artefact_flux: np.ndarray,
+    artefact_binary: np.ndarray,
+    lens_flux: np.ndarray,
+    lens_binary: np.ndarray,
+    pixel_scale: float,
+    mask_centre: list[float],
+    mask_radius: float,
+    position_list: list[list[float]],
+    output_path: Path,
 ) -> None:
     """Six-panel 2×3 PNG.
 
@@ -226,7 +252,10 @@ def save_diagnostic_png(
     axes[0, 0].set_xlim(cx - mask_radius, cx + mask_radius)
     axes[0, 0].set_ylim(cy - mask_radius, cy + mask_radius)
     axes[0, 0].set_title("RGB", fontsize=20)
-    apply_arcsec_ticks(axes[0, 0], [cx - mask_radius, cx + mask_radius, cy - mask_radius, cy + mask_radius])
+    apply_arcsec_ticks(
+        axes[0, 0],
+        [cx - mask_radius, cx + mask_radius, cy - mask_radius, cy + mask_radius],
+    )
 
     # (0,1) VIS image
     axes[0, 1].imshow(
@@ -312,6 +341,7 @@ def save_diagnostic_png(
 # Per-lens processing
 # ---------------------------------------------------------------------------
 
+
 def process_lens(lens_dir: Path, overview_dir: Path) -> None:
     lens_name = lens_dir.name
     seg_dir = lens_dir / "segmentation"
@@ -377,7 +407,9 @@ def process_lens(lens_dir: Path, overview_dir: Path) -> None:
             print(f"  [warn] {lens_name}: no valid source positions found")
         else:
             if len(position_list) < N_POSITIONS:
-                print(f"  [warn] {lens_name}: only {len(position_list)} position(s) found (need {N_POSITIONS})")
+                print(
+                    f"  [warn] {lens_name}: only {len(position_list)} position(s) found (need {N_POSITIONS})"
+                )
             positions = al.Grid2DIrregular(values=position_list)
             al.output_to_json(obj=positions, file_path=lens_dir / "positions.json")
             print(f"  [ok]   {lens_name}: {len(position_list)} positions written")
@@ -422,7 +454,10 @@ def process_lens(lens_dir: Path, overview_dir: Path) -> None:
         lens_binary = np.zeros_like(source_flux)
 
     # Save combined diagnostic PNG in the lens directory and the sample overview folder
-    for output_path in (lens_dir / "segmentation.png", overview_dir / f"{lens_name}.png"):
+    for output_path in (
+        lens_dir / "segmentation.png",
+        overview_dir / f"{lens_name}.png",
+    ):
         try:
             save_diagnostic_png(
                 rgb_image=rgb_image,
@@ -446,14 +481,20 @@ def process_lens(lens_dir: Path, overview_dir: Path) -> None:
 # Entry point
 # ---------------------------------------------------------------------------
 
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--sample", metavar="name", required=True,
+        "--sample",
+        metavar="name",
+        required=True,
         help="Sample subdirectory inside dataset/ (e.g. dr1_top_500).",
     )
     parser.add_argument(
-        "--dataset", metavar="name", required=False, default=None,
+        "--dataset",
+        metavar="name",
+        required=False,
+        default=None,
         help="Optional single lens directory name under the dataset root.",
     )
     return parser.parse_args()
