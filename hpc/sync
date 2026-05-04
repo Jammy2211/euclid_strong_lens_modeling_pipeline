@@ -37,7 +37,7 @@ REMOTE="${HPC_HOST}:${HPC_BASE}/${PROJECT_NAME}"
 CODE_DIRS=(config hpc pipelines tests tools workflow)
 
 # Top-level source files that live at the project root (not in a subdirectory).
-ROOT_FILES=(activate.sh start_here.py util.py __init__.py README.rst LICENSE)
+ROOT_FILES=(activate.sh start_here.py util.py __init__.py README.md LICENSE)
 
 # Raw data — pushed with --ignore-existing.
 # FITS files are written once and never modified, so any file already present
