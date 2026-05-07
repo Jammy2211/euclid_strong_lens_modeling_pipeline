@@ -46,7 +46,6 @@ especially if loading results from hard-disk is slow.
 # %cd $workspace_path
 # print(f"Working Directory has been set to `{workspace_path}`")
 
-from os import path
 from pathlib import Path
 
 import autofit as af
@@ -93,7 +92,7 @@ Set up the aggregator which will load results from the output folder of the mode
 """
 from autofit.aggregator.aggregator import Aggregator
 
-agg = Aggregator.from_directory(directory=path.join("output"), completed_only=True)
+agg = Aggregator.from_directory(directory=Path("output"), completed_only=True)
 
 """
 Use a query on the aggregator to only get results for the `mass_total[1]` model-fit, which contains the final lens
@@ -195,7 +194,7 @@ shape (1, 3).
 
 When we add a single .png, we cannot extract or make it, it simply gets added to the subplot.
 """
-# image_rgb = Image.open(path.join(dataset_path, "rgb.png"))
+# image_rgb = Image.open(Path(dataset_path) / "rgb.png")
 #
 # image = agg_fits.extract_fits(
 #     al.agg.subplot_dataset.data,
