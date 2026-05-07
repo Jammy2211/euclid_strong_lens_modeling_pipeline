@@ -16,7 +16,6 @@ before reading this example, as the same API is used here.
 # print(f"Working Directory has been set to `{workspace_path}`")
 
 from pathlib import Path
-from os import path
 
 import autofit as af
 import autolens as al
@@ -64,7 +63,7 @@ Set up the aggregator which will load results from the output folder of the mode
 """
 from autofit.aggregator.aggregator import Aggregator
 
-agg = Aggregator.from_directory(directory=path.join("output"), completed_only=True)
+agg = Aggregator.from_directory(directory=Path("output"), completed_only=True)
 
 """
 Use a query on the aggregator to only get results for the `mass_total[1]` model-fit, which contains the final lens

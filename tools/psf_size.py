@@ -19,10 +19,10 @@ This GUI is adapted from the following code: https://gist.github.com/brikeats/4f
 
 import os
 import json
-from os import path
 import autolens as al
 import autolens.plot as aplt
 import numpy as np
+from pathlib import Path
 
 """
 __Dataset__
@@ -32,10 +32,10 @@ folder `dataset/imaging/no_lens_light/mass_sie__source_sersic`.
 """
 
 dataset_name = "102019586_NEG564463213499964061"
-dataset_path = path.join("dataset", dataset_name)
+dataset_path = Path("dataset") / dataset_name
 
 psf_full = al.Convolver.from_fits(
-    file_path=path.join(dataset_path, "psf_full.fits"), hdu=0, pixel_scales=0.1
+    file_path=Path(dataset_path) / "psf_full.fits", hdu=0, pixel_scales=0.1
 )
 
 print("PSF Shape Before Trimming:")
@@ -48,7 +48,7 @@ print(f"PSF being trimmed to {new_shape}")
 
 psf = psf_full.resized_from(new_shape=new_shape)
 
-psf.output_to_fits(file_path=path.join(dataset_path, "psf.fits"), overwrite=True)
+psf.output_to_fits(file_path=Path(dataset_path) / "psf.fits", overwrite=True)
 
 
 """

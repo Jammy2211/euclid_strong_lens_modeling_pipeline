@@ -161,7 +161,7 @@ if len(extra_galaxies_centres) > 1:
 
 info = {}
 
-if os.path.exists(dataset_main_path / "info.json"):
+if Path(dataset_main_path / "info.json").exists():
     try:
         with open(dataset_main_path / "info.json") as json_file:
             info = json.load(json_file)
